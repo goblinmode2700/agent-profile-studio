@@ -188,6 +188,16 @@ describe("nested unknown field rejection", () => {
 
 // (6) confirmation binds bytes and destination
 describe("install confirmation binding", () => {
+  it("requires the proposed bytes and resolved destination from the preview", async () => {
+    const plan = await planInstall(store, "targets.yaml", "code-reviewer");
+    const entry = plan.entries[0]!;
+    const result = await applyInstall(store, "targets.yaml", "code-reviewer", [
+      { target: entry.target, expectedHash: null } as never,
+    ]);
+    expect(result.written).toEqual([]);
+    expect(result.conflicts[0]!.message).toContain("must include");
+    expect(fs.existsSync(entry.filePath)).toBe(false);
+  });
   it("refuses to write when the profile output changed after the preview", async () => {
     const plan = await planInstall(store, "targets.yaml", "code-reviewer");
     const entry = plan.entries[0]!;
@@ -199,7 +209,7 @@ describe("install confirmation binding", () => {
       {
         target: entry.target,
         expectedHash: entry.existingHash ?? null,
-        proposedHash: entry.proposedHash,
+        proposedHash: entry.proposedHash!,
         filePath: entry.filePath,
       },
     ]);
@@ -243,7 +253,7 @@ describe("install confirmation binding", () => {
       plan.entries.map((e) => ({
         target: e.target,
         expectedHash: e.existingHash ?? null,
-        proposedHash: e.proposedHash,
+        proposedHash: e.proposedHash!,
         filePath: e.filePath,
       })),
     );

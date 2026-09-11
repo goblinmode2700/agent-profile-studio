@@ -1,9 +1,9 @@
 import { createTwoFilesPatch } from "diff";
 
-import { buildProfile, parseProfileDoc } from "@/core/pipeline";
-import { SEED_FILES } from "@/core/seed";
-import type { CommitInfo, DocKind, InstallPlanEntry, StoreSnapshot } from "@/core/types";
-import { parseYaml } from "@/core/yaml";
+import { buildProfile, parseProfileDoc } from "../core/pipeline";
+import { SEED_FILES } from "../core/seed";
+import type { CommitInfo, DocKind, InstallPlanEntry, StoreSnapshot } from "../core/types";
+import { parseYaml } from "../core/yaml";
 
 import type { InstallPlan, StudioApi } from "./api";
 
@@ -15,6 +15,7 @@ interface DemoState {
   /** Simulated files inside target directories. Nothing is written to disk. */
   installed: Record<string, string>;
   directories?: string[];
+  moves?: Record<string, string[]>;
 }
 
 const KIND_PATH: Record<DocKind, (name: string) => string> = {
@@ -68,6 +69,7 @@ export class DemoApi implements StudioApi {
       ],
       installed: {},
       directories: ["catalog", "catalog/config", "catalog/prompt", "catalog/helpers"],
+      moves: {},
     };
     return state;
   }
@@ -178,37 +180,49 @@ export class DemoApi implements StudioApi {
     const to = `${directory}/${name}${ext}`;
     this.state.files[to] = this.state.files[from]!;
     delete this.state.files[from];
+    this.state.moves = {
+      ...(this.state.moves ?? {}),
+      [to]: [from, ...(this.state.moves?.[from] ?? [])],
+    };
     this.snapshot(`move ${from} -> ${to}`);
   }
 
+  private historyPaths(kind: DocKind, name: string): string[] {
+    const current = this.currentPath(kind, name);
+    return [current, ...(this.state.moves?.[current] ?? [])];
+  }
+
   async history(kind: DocKind, name: string): Promise<CommitInfo[]> {
-    const path = KIND_PATH[kind](name);
+    const paths = this.historyPaths(kind, name);
     const out: CommitInfo[] = [];
     let previous: string | undefined;
     for (const commit of [...this.state.commits].reverse()) {
-      const content = commit.files[path];
-      if (content !== undefined && content !== previous) {
+      const foundPath = paths.find((path) => commit.files[path] !== undefined);
+      const content = foundPath ? commit.files[foundPath] : undefined;
+      const signature = foundPath && content !== undefined ? `${foundPath}\0${content}` : undefined;
+      if (content !== undefined && signature !== previous) {
         out.unshift({
           oid: commit.oid,
           message: commit.message,
           author: "demo",
           date: commit.date,
         });
-        previous = content;
+        previous = signature;
       }
     }
     return out;
   }
 
   async version(kind: DocKind, name: string, oid: string) {
-    const path = KIND_PATH[kind](name);
     const commit = this.state.commits.find((c) => c.oid === oid);
-    if (!commit || commit.files[path] === undefined) throw new Error(`${path}: not in ${oid}`);
-    return commit.files[path];
+    const paths = this.historyPaths(kind, name);
+    const path = paths.find((candidate) => commit?.files[candidate] !== undefined);
+    if (!commit || !path) throw new Error(`${paths[0]}: not in ${oid}`);
+    return commit.files[path]!;
   }
 
   async diff(kind: DocKind, name: string, a: string, b?: string) {
-    const path = KIND_PATH[kind](name);
+    const path = this.currentPath(kind, name);
     const left = await this.version(kind, name, a);
     const right = b ? await this.version(kind, name, b) : (this.state.files[path] ?? "");
     return createTwoFilesPatch(
@@ -221,8 +235,9 @@ export class DemoApi implements StudioApi {
 
   async restore(kind: DocKind, name: string, oid: string) {
     const content = await this.version(kind, name, oid);
-    this.state.files[KIND_PATH[kind](name)] = content;
-    this.snapshot(`restore ${KIND_PATH[kind](name)} from ${oid.slice(0, 10)}`);
+    const path = this.currentPath(kind, name);
+    this.state.files[path] = content;
+    this.snapshot(`restore ${path} from ${oid.slice(0, 10)}`);
     return content;
   }
 
@@ -319,8 +334,8 @@ export class DemoApi implements StudioApi {
     requested: Array<{
       target: string;
       expectedHash: string | null;
-      proposedHash?: string;
-      filePath?: string;
+      proposedHash: string;
+      filePath: string;
     }>,
   ) {
     const plan = await this.installPreview(role);
@@ -336,14 +351,21 @@ export class DemoApi implements StudioApi {
         );
         continue;
       }
-      if (req.proposedHash !== undefined && req.proposedHash !== plan.proposedHash) {
+      if (typeof req.proposedHash !== "string" || typeof req.filePath !== "string") {
+        conflicts.push({
+          ...entry,
+          message: `install confirmation must include the preview's proposedHash and filePath. Nothing was written; request a fresh preview.`,
+        });
+        continue;
+      }
+      if (req.proposedHash !== plan.proposedHash) {
         conflicts.push({
           ...entry,
           message: `the profile output changed since the preview. Nothing was written; review the new diff.`,
         });
         continue;
       }
-      if (req.filePath !== undefined && req.filePath !== entry.filePath) {
+      if (req.filePath !== entry.filePath) {
         conflicts.push({
           ...entry,
           message: `the destination changed since the preview. Nothing was written.`,

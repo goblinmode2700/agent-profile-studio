@@ -231,9 +231,9 @@ export interface ApplyRequestEntry {
   /** sha256 of the bytes on disk the user saw, or null if the user saw "new". */
   expectedHash: string | null;
   /** sha256 of the exact output bytes the user confirmed. */
-  proposedHash?: string;
+  proposedHash: string;
   /** the destination the user saw resolved. */
-  filePath?: string;
+  filePath: string;
 }
 
 /**
@@ -270,7 +270,15 @@ export async function applyInstall(
       );
       continue;
     }
-    if (req.proposedHash !== undefined && req.proposedHash !== plan.proposedHash) {
+    if (typeof req.proposedHash !== "string" || typeof req.filePath !== "string") {
+      conflicts.push({
+        ...entry,
+        status: "changed",
+        message: `install confirmation must include the preview's proposedHash and filePath. Nothing was written; request a fresh preview.`,
+      });
+      continue;
+    }
+    if (req.proposedHash !== plan.proposedHash) {
       conflicts.push({
         ...entry,
         status: "changed",
@@ -278,7 +286,7 @@ export async function applyInstall(
       });
       continue;
     }
-    if (req.filePath !== undefined && req.filePath !== entry.filePath) {
+    if (req.filePath !== entry.filePath) {
       conflicts.push({
         ...entry,
         status: "changed",

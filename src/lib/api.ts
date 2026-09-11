@@ -14,8 +14,8 @@ export interface InstallPlan {
 export interface InstallConfirmation {
   target: string;
   expectedHash: string | null;
-  proposedHash?: string;
-  filePath?: string;
+  proposedHash: string;
+  filePath: string;
 }
 
 export interface StudioApi {

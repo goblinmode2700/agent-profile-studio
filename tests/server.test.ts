@@ -83,7 +83,14 @@ describe("recursive catalog", () => {
       store.write("partial", "model-sonnet-medium", "x", "catalog/other"),
     ).rejects.toThrow(/conflicts/);
     await expect(store.removeDirectory("catalog/config")).rejects.toThrow(/not empty/);
-    await expect(store.createDirectory("../outside")).rejects.toThrow(/inside catalog/);
+    await expect(store.createDirectory("../outside")).rejects.toThrow(/escapes|outside/);
+    await expect(store.createDirectory("catalog/../profiles/escaped")).rejects.toThrow(/outside/);
+    await expect(store.write("partial", "escaped", "x", "catalog/../profiles")).rejects.toThrow(
+      /outside/,
+    );
+    await expect(
+      store.move("fragment", "model-sonnet-medium", "catalog/../profiles"),
+    ).rejects.toThrow(/outside/);
   });
 
   it("reports every same-kind ambiguous legacy path", async () => {
@@ -135,6 +142,12 @@ describe("git history, diff and restore", () => {
 
 describe("install", () => {
   const hashOf = (p: string) => sha256(fs.readFileSync(p, "utf8"));
+  const confirmation = (e: Awaited<ReturnType<typeof planInstall>>["entries"][number]) => ({
+    target: e.target,
+    expectedHash: e.existingHash ?? null,
+    proposedHash: e.proposedHash!,
+    filePath: e.filePath,
+  });
 
   it("reports new, writes, then reports unchanged", async () => {
     const first = await planInstall(store, "targets.yaml", "code-reviewer");
@@ -144,7 +157,7 @@ describe("install", () => {
       store,
       "targets.yaml",
       "code-reviewer",
-      first.entries.map((e) => ({ target: e.target, expectedHash: null })),
+      first.entries.map(confirmation),
     );
     expect(applied.conflicts).toEqual([]);
     const [a, b] = first.entries.map((e) => fs.readFileSync(e.filePath, "utf8"));
@@ -157,12 +170,7 @@ describe("install", () => {
 
   it("shows a diff when a variable changed", async () => {
     const plan = await planInstall(store, "targets.yaml", "code-reviewer");
-    await applyInstall(
-      store,
-      "targets.yaml",
-      "code-reviewer",
-      plan.entries.map((e) => ({ target: e.target, expectedHash: null })),
-    );
+    await applyInstall(store, "targets.yaml", "code-reviewer", plan.entries.map(confirmation));
     const source = await store.read("profile", "code-reviewer");
     await store.write("profile", "code-reviewer", source.replace("spec-03", "spec-77"));
 
@@ -173,12 +181,7 @@ describe("install", () => {
 
   it("refuses to overwrite when the file changed since the preview", async () => {
     const plan = await planInstall(store, "targets.yaml", "code-reviewer");
-    await applyInstall(
-      store,
-      "targets.yaml",
-      "code-reviewer",
-      plan.entries.map((e) => ({ target: e.target, expectedHash: null })),
-    );
+    await applyInstall(store, "targets.yaml", "code-reviewer", plan.entries.map(confirmation));
     const source = await store.read("profile", "code-reviewer");
     await store.write("profile", "code-reviewer", source.replace("spec-03", "spec-77"));
 
@@ -188,7 +191,7 @@ describe("install", () => {
     await fsp.writeFile(entry.filePath, '{"provider":"claude"}\n', "utf8");
 
     const result = await applyInstall(store, "targets.yaml", "code-reviewer", [
-      { target: entry.target, expectedHash: entry.existingHash ?? null },
+      confirmation(entry),
     ]);
     expect(result.written).toEqual([]);
     expect(result.conflicts[0].message).toContain("changed on disk");
@@ -198,7 +201,7 @@ describe("install", () => {
     const fresh = await planInstall(store, "targets.yaml", "code-reviewer");
     const freshEntry = fresh.entries.find((e) => e.target === entry.target)!;
     const ok = await applyInstall(store, "targets.yaml", "code-reviewer", [
-      { target: freshEntry.target, expectedHash: hashOf(freshEntry.filePath) },
+      { ...confirmation(freshEntry), expectedHash: hashOf(freshEntry.filePath) },
     ]);
     expect(ok.conflicts).toEqual([]);
     expect(fs.readFileSync(freshEntry.filePath, "utf8")).toContain("spec-77");
@@ -213,7 +216,7 @@ describe("install", () => {
     );
     await expect(
       applyInstall(store, "targets.yaml", "code-reviewer", [
-        { target: "reference-project", expectedHash: null },
+        { target: "reference-project", expectedHash: null, proposedHash: "invalid", filePath: "" },
       ]),
     ).rejects.toThrow(/does not validate/);
   });
@@ -304,7 +307,14 @@ describe("optional project provider", () => {
       store,
       "targets.yaml",
       "code-reviewer",
-      [{ target: "governed", expectedHash: null, filePath: preview.entries[0]!.filePath }],
+      [
+        {
+          target: "governed",
+          expectedHash: null,
+          proposedHash: preview.proposedHash,
+          filePath: preview.entries[0]!.filePath,
+        },
+      ],
       provider,
     );
     expect(applied.conflicts[0]?.message).toContain("destination changed");

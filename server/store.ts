@@ -133,6 +133,16 @@ export class Store {
     return this.rel(kind, name);
   }
 
+  private catalogDirectory(directory: string, allowRoot = true): string {
+    const catalogRoot = this.abs("catalog");
+    const resolved = this.abs(directory);
+    assertInside(catalogRoot, resolved, `catalog directory "${directory}"`);
+    const relative = path.relative(this.root, resolved).split(path.sep).join("/");
+    if (!allowRoot && relative === "catalog")
+      throw new StoreError("cannot remove the catalog root");
+    return relative;
+  }
+
   private async historicalPaths(rel: string): Promise<string[]> {
     const paths = new Set([rel, ...(this.movedFrom.get(rel) ?? [])]);
     const log = await git.log({ fs, dir: this.root }).catch(() => []);
@@ -292,9 +302,7 @@ export class Store {
       const collision = (await this.catalogIndex()).find((entry) => entry.name === name);
       if (collision)
         throw new StoreError(`new document stem "${name}" conflicts with ${collision.path}.`, 409);
-      const dir = directory ?? KIND_DIR[kind].dir;
-      if (dir !== "catalog" && !dir.startsWith("catalog/"))
-        throw new StoreError(`catalog directory must stay inside catalog.`);
+      const dir = this.catalogDirectory(directory ?? KIND_DIR[kind].dir);
       rel = `${dir}/${name}${KIND_DIR[kind].ext}`;
     }
     const target = kind === "targets" ? this.targetsPath() : this.abs(rel);
@@ -379,30 +387,26 @@ export class Store {
   }
 
   async createDirectory(directory: string): Promise<void> {
-    if (directory !== "catalog" && !directory.startsWith("catalog/"))
-      throw new StoreError("directory must stay inside catalog");
-    await fsp.mkdir(this.abs(directory), { recursive: true });
+    await fsp.mkdir(this.abs(this.catalogDirectory(directory)), { recursive: true });
   }
 
   async removeDirectory(directory: string): Promise<void> {
-    if (directory === "catalog" || !directory.startsWith("catalog/"))
-      throw new StoreError("cannot remove the catalog root");
-    const target = this.abs(directory);
+    const safeDirectory = this.catalogDirectory(directory, false);
+    const target = this.abs(safeDirectory);
     if ((await fsp.readdir(target)).length)
-      throw new StoreError(`${directory}: directory is not empty`, 409);
+      throw new StoreError(`${safeDirectory}: directory is not empty`, 409);
     await fsp.rmdir(target);
   }
 
   async move(kind: CatalogKind, name: string, directory: string): Promise<CommitInfo> {
-    if (directory !== "catalog" && !directory.startsWith("catalog/"))
-      throw new StoreError("destination must stay inside catalog");
+    const safeDirectory = this.catalogDirectory(directory);
     const from = await this.rel(kind, name);
-    const to = `${directory}/${name}${KIND_DIR[kind].ext}`;
+    const to = `${safeDirectory}/${name}${KIND_DIR[kind].ext}`;
     if (from === to) throw new StoreError(`${from}: already in that directory`, 409);
-    if (directory.startsWith(`${from}/`))
+    if (safeDirectory.startsWith(`${from}/`))
       throw new StoreError("cannot move a directory into itself");
     if (fs.existsSync(this.abs(to))) throw new StoreError(`${to}: destination already exists`, 409);
-    await fsp.mkdir(this.abs(directory), { recursive: true });
+    await fsp.mkdir(this.abs(safeDirectory), { recursive: true });
     await fsp.rename(this.abs(from), this.abs(to));
     await git.remove({ fs, dir: this.root, filepath: from }).catch(() => undefined);
     await git.add({ fs, dir: this.root, filepath: to });

@@ -227,8 +227,8 @@ app.post(
       entries: Array<{
         target: string;
         expectedHash: string | null;
-        proposedHash?: string;
-        filePath?: string;
+        proposedHash: string;
+        filePath: string;
       }>;
     };
     const result = await applyInstall(
