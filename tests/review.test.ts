@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { isOriginAllowed, loadConfig } from "../server/config";
+import { isOriginAllowed, loadConfig, LOOPBACK_HOST } from "../server/config";
 import { applyInstall, planInstall, resolveOutputFile } from "../server/install";
 import { Store, StoreError, assertInside, sha256 } from "../server/store";
 import { buildProfile, validateProfileDocShape } from "../src/core/pipeline";
@@ -45,9 +45,19 @@ afterEach(async () => {
 describe("local-only network defaults", () => {
   it("defaults to loopback and a fixed list of local UI origins", () => {
     const cfg = loadConfig(root);
-    expect(cfg.host).toBe("127.0.0.1");
+    expect(cfg.host).toBe(LOOPBACK_HOST);
     expect(cfg.allowedOrigins).not.toContain("*");
     expect(cfg.allowedOrigins).toContain("http://localhost:8080");
+  });
+
+  it("does not allow environment or file configuration to expose the server", () => {
+    fs.writeFileSync(path.join(root, "studio.config.json"), JSON.stringify({ host: "0.0.0.0" }));
+    process.env.STUDIO_HOST = "0.0.0.0";
+    try {
+      expect(loadConfig(root).host).toBe(LOOPBACK_HOST);
+    } finally {
+      delete process.env.STUDIO_HOST;
+    }
   });
 
   it("rejects a disallowed origin and allows header-less callers", () => {
@@ -188,6 +198,16 @@ describe("nested unknown field rejection", () => {
 
 // (6) confirmation binds bytes and destination
 describe("install confirmation binding", () => {
+  it("requires the proposed bytes and resolved destination from the preview", async () => {
+    const plan = await planInstall(store, "targets.yaml", "code-reviewer");
+    const entry = plan.entries[0]!;
+    const result = await applyInstall(store, "targets.yaml", "code-reviewer", [
+      { target: entry.target, expectedHash: null } as never,
+    ]);
+    expect(result.written).toEqual([]);
+    expect(result.conflicts[0]!.message).toContain("must include");
+    expect(fs.existsSync(entry.filePath)).toBe(false);
+  });
   it("refuses to write when the profile output changed after the preview", async () => {
     const plan = await planInstall(store, "targets.yaml", "code-reviewer");
     const entry = plan.entries[0]!;
@@ -199,7 +219,7 @@ describe("install confirmation binding", () => {
       {
         target: entry.target,
         expectedHash: entry.existingHash ?? null,
-        proposedHash: entry.proposedHash,
+        proposedHash: entry.proposedHash!,
         filePath: entry.filePath,
       },
     ]);
@@ -243,7 +263,7 @@ describe("install confirmation binding", () => {
       plan.entries.map((e) => ({
         target: e.target,
         expectedHash: e.existingHash ?? null,
-        proposedHash: e.proposedHash,
+        proposedHash: e.proposedHash!,
         filePath: e.filePath,
       })),
     );

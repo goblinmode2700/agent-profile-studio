@@ -26,7 +26,8 @@ export const Route = createFileRoute("/partials")({
       { property: "og:title", content: "Partials — Agent Profile Studio" },
       {
         property: "og:description",
-        content: "Write and test reusable Handlebars prompt partials with a sample input and live output.",
+        content:
+          "Write and test reusable Handlebars prompt partials with a sample input and live output.",
       },
     ],
   }),
@@ -45,10 +46,13 @@ function PartialsPage() {
 
   useEffect(() => {
     if (!selected && partials.length) setSelected(partials[0]!.name);
-    if (selected && !partials.some((p) => p.name === selected)) setSelected(partials[0]?.name ?? null);
+    if (selected && !partials.some((p) => p.name === selected))
+      setSelected(partials[0]?.name ?? null);
   }, [partials, selected]);
 
   const source = selected ? content("partial", selected) : "";
+  const selectedPath =
+    partials.find((doc) => doc.name === selected)?.path ?? `catalog/prompt/${selected}.hbs`;
 
   const result = useMemo(() => {
     if (!selected) return null;
@@ -58,7 +62,7 @@ function PartialsPage() {
       partials: view.partials,
       helpers: view.helpers,
       input: parsedInput.value ?? {},
-      file: `catalog/prompt/${selected}.hbs`,
+      file: selectedPath,
     });
     const dollars = validateDollarPlaceholders(rendered.text, { partial: selected });
     return {
@@ -66,7 +70,7 @@ function PartialsPage() {
       issues: [...parsedInput.issues, ...rendered.issues, ...dollars],
       ms: rendered.ms,
     };
-  }, [inputText, selected, view]);
+  }, [inputText, selected, selectedPath, view]);
 
   const usedBy = useMemo(() => {
     if (!selected) return [];
@@ -91,26 +95,40 @@ function PartialsPage() {
           docs={partials}
           selected={selected}
           onSelect={setSelected}
-          onCreate={(name) => void create("partial", name, NEW_PARTIAL).then(() => setSelected(name))}
+          onCreate={(name) =>
+            void create("partial", name, NEW_PARTIAL).then(() => setSelected(name))
+          }
           onDelete={(name) => void remove("partial", name)}
           isDirty={(name) => isDirty("partial", name)}
           emptyHint="A partial is one reusable paragraph of a prompt."
           newLabel="partial-name"
         />
         {!selected ? (
-          <EmptyState title="No partial selected" hint="Pick a partial, or create one with the + button." />
+          <EmptyState
+            title="No partial selected"
+            hint="Pick a partial, or create one with the + button."
+          />
         ) : (
           <div className="grid min-h-0 grid-rows-2 gap-2">
             <div className="grid min-h-0 grid-cols-[1.6fr_1fr] gap-2">
               <Panel
-                title={`catalog/prompt/${selected}.hbs`}
+                title={selectedPath}
                 actions={
                   <>
                     {dirty && <span className="font-mono text-[10px] text-primary">unsaved</span>}
-                    <Button size="xs" variant="ghost" disabled={!dirty} onClick={() => discard("partial", selected)}>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      disabled={!dirty}
+                      onClick={() => discard("partial", selected)}
+                    >
                       <Undo2 className="size-3" />
                     </Button>
-                    <Button size="xs" disabled={!dirty} onClick={() => void save("partial", selected)}>
+                    <Button
+                      size="xs"
+                      disabled={!dirty}
+                      onClick={() => void save("partial", selected)}
+                    >
                       <Save className="size-3" /> Save
                     </Button>
                   </>
@@ -134,11 +152,16 @@ function PartialsPage() {
               </Panel>
               <div className="grid min-h-0 grid-rows-2 gap-2">
                 <Panel title="checks">
-                  <IssueList issues={result?.issues ?? []} okLabel="Renders, and only $project / $cwd appear." />
+                  <IssueList
+                    issues={result?.issues ?? []}
+                    okLabel="Renders, and only $project / $cwd appear."
+                  />
                 </Panel>
                 <Panel title="used by">
                   {usedBy.length === 0 ? (
-                    <p className="p-2.5 font-mono text-[11px] text-muted-foreground">No profile names this partial.</p>
+                    <p className="p-2.5 font-mono text-[11px] text-muted-foreground">
+                      No profile names this partial.
+                    </p>
                   ) : (
                     <ul className="p-2.5 font-mono text-[11px] leading-relaxed">
                       {usedBy.map((name) => (

@@ -1,9 +1,9 @@
 import { createTwoFilesPatch } from "diff";
 
-import { buildProfile, parseProfileDoc } from "@/core/pipeline";
-import { SEED_FILES } from "@/core/seed";
-import type { CommitInfo, DocKind, InstallPlanEntry, StoreSnapshot } from "@/core/types";
-import { parseYaml } from "@/core/yaml";
+import { buildProfile, parseProfileDoc } from "../core/pipeline";
+import { SEED_FILES } from "../core/seed";
+import type { CommitInfo, DocKind, InstallPlanEntry, StoreSnapshot } from "../core/types";
+import { parseYaml } from "../core/yaml";
 
 import type { InstallPlan, StudioApi } from "./api";
 
@@ -14,6 +14,8 @@ interface DemoState {
   commits: Array<{ oid: string; message: string; date: string; files: Record<string, string> }>;
   /** Simulated files inside target directories. Nothing is written to disk. */
   installed: Record<string, string>;
+  directories?: string[];
+  moves?: Record<string, string[]>;
 }
 
 const KIND_PATH: Record<DocKind, (name: string) => string> = {
@@ -66,6 +68,8 @@ export class DemoApi implements StudioApi {
         },
       ],
       installed: {},
+      directories: ["catalog", "catalog/config", "catalog/prompt", "catalog/helpers"],
+      moves: {},
     };
     return state;
   }
@@ -94,67 +98,146 @@ export class DemoApi implements StudioApi {
     this.persist();
   }
 
+  async getProjects() {
+    return {
+      available: false,
+      measuredAt: new Date().toISOString(),
+      projects: [],
+      error: "Project provider is available only from the local server.",
+    };
+  }
+
   async getStore(): Promise<StoreSnapshot> {
     const pick = (prefix: string, ext: string) =>
       Object.entries(this.state.files)
         .filter(([p]) => p.startsWith(prefix) && p.endsWith(ext))
         .map(([p, content]) => ({ name: p.slice(prefix.length, -ext.length), content }))
         .sort((a, b) => a.name.localeCompare(b.name));
+    const catalogPick = (ext: string) =>
+      Object.entries(this.state.files)
+        .filter(([p]) => p.startsWith("catalog/") && p.endsWith(ext))
+        .map(([p, content]) => ({
+          name: p.slice(p.lastIndexOf("/") + 1, -ext.length),
+          content,
+          path: p,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     return {
       storePath: "(demo mode — in-browser store, nothing on disk)",
       mode: "demo",
       profiles: pick("profiles/", ".yaml"),
-      fragments: pick("catalog/config/", ".yaml"),
-      partials: pick("catalog/prompt/", ".hbs"),
-      helpers: pick("catalog/helpers/", ".js"),
+      fragments: catalogPick(".yaml"),
+      partials: catalogPick(".hbs"),
+      helpers: catalogPick(".js"),
       targets: this.state.files["targets.yaml"] ?? "",
+      catalogDirectories: this.state.directories ?? [
+        "catalog",
+        "catalog/config",
+        "catalog/prompt",
+        "catalog/helpers",
+      ],
     };
   }
 
-  async saveDoc(kind: DocKind, name: string, content: string) {
-    const path = KIND_PATH[kind](name);
+  private currentPath(kind: DocKind, name: string): string {
+    const ext =
+      kind === "fragment" ? ".yaml" : kind === "partial" ? ".hbs" : kind === "helper" ? ".js" : "";
+    return (
+      Object.keys(this.state.files).find(
+        (p) => p.startsWith("catalog/") && p.endsWith(`/${name}${ext}`),
+      ) ?? KIND_PATH[kind](name)
+    );
+  }
+
+  async saveDoc(kind: DocKind, name: string, content: string, directory?: string) {
+    const path =
+      directory && kind !== "profile" && kind !== "targets"
+        ? `${directory}/${name}${kind === "fragment" ? ".yaml" : kind === "partial" ? ".hbs" : ".js"}`
+        : this.currentPath(kind, name);
     this.state.files[path] = content;
     return this.snapshot(`save ${path}`);
   }
 
   async deleteDoc(kind: DocKind, name: string) {
-    const path = KIND_PATH[kind](name);
+    const path = this.currentPath(kind, name);
     delete this.state.files[path];
     this.snapshot(`delete ${path}`);
   }
 
+  async createDirectory(directory: string) {
+    this.state.directories = [...new Set([...(this.state.directories ?? []), directory])].sort();
+    this.persist();
+  }
+  async deleteDirectory(directory: string) {
+    if (Object.keys(this.state.files).some((p) => p.startsWith(`${directory}/`)))
+      throw new Error(`${directory}: directory is not empty`);
+    this.state.directories = (this.state.directories ?? []).filter((d) => d !== directory);
+    this.persist();
+  }
+  async moveDoc(kind: "fragment" | "partial" | "helper", name: string, directory: string) {
+    const from = this.currentPath(kind, name);
+    const ext = kind === "fragment" ? ".yaml" : kind === "partial" ? ".hbs" : ".js";
+    const to = `${directory}/${name}${ext}`;
+    this.state.files[to] = this.state.files[from]!;
+    delete this.state.files[from];
+    this.state.moves = {
+      ...(this.state.moves ?? {}),
+      [to]: [from, ...(this.state.moves?.[from] ?? [])],
+    };
+    this.snapshot(`move ${from} -> ${to}`);
+  }
+
+  private historyPaths(kind: DocKind, name: string): string[] {
+    const current = this.currentPath(kind, name);
+    return [current, ...(this.state.moves?.[current] ?? [])];
+  }
+
   async history(kind: DocKind, name: string): Promise<CommitInfo[]> {
-    const path = KIND_PATH[kind](name);
+    const paths = this.historyPaths(kind, name);
     const out: CommitInfo[] = [];
     let previous: string | undefined;
     for (const commit of [...this.state.commits].reverse()) {
-      const content = commit.files[path];
-      if (content !== undefined && content !== previous) {
-        out.unshift({ oid: commit.oid, message: commit.message, author: "demo", date: commit.date });
-        previous = content;
+      const foundPath = paths.find((path) => commit.files[path] !== undefined);
+      const content = foundPath ? commit.files[foundPath] : undefined;
+      const signature = foundPath && content !== undefined ? `${foundPath}\0${content}` : undefined;
+      if (content !== undefined && signature !== previous) {
+        out.unshift({
+          oid: commit.oid,
+          message: commit.message,
+          author: "demo",
+          date: commit.date,
+        });
+        previous = signature;
       }
     }
     return out;
   }
 
   async version(kind: DocKind, name: string, oid: string) {
-    const path = KIND_PATH[kind](name);
     const commit = this.state.commits.find((c) => c.oid === oid);
-    if (!commit || commit.files[path] === undefined) throw new Error(`${path}: not in ${oid}`);
-    return commit.files[path];
+    const paths = this.historyPaths(kind, name);
+    const path = paths.find((candidate) => commit?.files[candidate] !== undefined);
+    if (!commit || !path) throw new Error(`${paths[0]}: not in ${oid}`);
+    return commit.files[path]!;
   }
 
   async diff(kind: DocKind, name: string, a: string, b?: string) {
-    const path = KIND_PATH[kind](name);
+    const path = this.currentPath(kind, name);
     const left = await this.version(kind, name, a);
     const right = b ? await this.version(kind, name, b) : (this.state.files[path] ?? "");
-    return createTwoFilesPatch(`${path}@${a.slice(0, 10)}`, `${path}@${b ? b.slice(0, 10) : "working"}`, left, right);
+    return createTwoFilesPatch(
+      `${path}@${a.slice(0, 10)}`,
+      `${path}@${b ? b.slice(0, 10) : "working"}`,
+      left,
+      right,
+    );
   }
 
   async restore(kind: DocKind, name: string, oid: string) {
     const content = await this.version(kind, name, oid);
-    this.state.files[KIND_PATH[kind](name)] = content;
-    this.snapshot(`restore ${KIND_PATH[kind](name)} from ${oid.slice(0, 10)}`);
+    const path = this.currentPath(kind, name);
+    this.state.files[path] = content;
+    this.snapshot(`restore ${path} from ${oid.slice(0, 10)}`);
     return content;
   }
 
@@ -167,12 +250,12 @@ export class DemoApi implements StudioApi {
       Object.fromEntries(
         Object.entries(this.state.files)
           .filter(([p]) => p.startsWith(prefix) && p.endsWith(ext))
-          .map(([p, c]) => [p.slice(prefix.length, -ext.length), c]),
+          .map(([p, c]) => [p.slice(p.lastIndexOf("/") + 1, -ext.length), c]),
       );
     const built = buildProfile(parsed.value, {
-      fragments: map("catalog/config/", ".yaml"),
-      partials: map("catalog/prompt/", ".hbs"),
-      helpers: map("catalog/helpers/", ".js"),
+      fragments: map("catalog/", ".yaml"),
+      partials: map("catalog/", ".hbs"),
+      helpers: map("catalog/", ".js"),
     });
     const targets =
       parseYaml<Record<string, { directory: string }>>(
@@ -251,28 +334,38 @@ export class DemoApi implements StudioApi {
     requested: Array<{
       target: string;
       expectedHash: string | null;
-      proposedHash?: string;
-      filePath?: string;
+      proposedHash: string;
+      filePath: string;
     }>,
   ) {
     const plan = await this.installPreview(role);
-    if (!plan.valid) throw new Error(`profiles/${role}.yaml does not validate; refusing to install.`);
+    if (!plan.valid)
+      throw new Error(`profiles/${role}.yaml does not validate; refusing to install.`);
     const written: InstallPlanEntry[] = [];
     const conflicts: InstallPlanEntry[] = [];
     for (const req of requested) {
       const entry = plan.entries.find((e) => e.target === req.target);
       if (!entry || entry.status === "error") {
-        conflicts.push(entry ?? { target: req.target, directory: "", filePath: "", status: "error" });
+        conflicts.push(
+          entry ?? { target: req.target, directory: "", filePath: "", status: "error" },
+        );
         continue;
       }
-      if (req.proposedHash !== undefined && req.proposedHash !== plan.proposedHash) {
+      if (typeof req.proposedHash !== "string" || typeof req.filePath !== "string") {
+        conflicts.push({
+          ...entry,
+          message: `install confirmation must include the preview's proposedHash and filePath. Nothing was written; request a fresh preview.`,
+        });
+        continue;
+      }
+      if (req.proposedHash !== plan.proposedHash) {
         conflicts.push({
           ...entry,
           message: `the profile output changed since the preview. Nothing was written; review the new diff.`,
         });
         continue;
       }
-      if (req.filePath !== undefined && req.filePath !== entry.filePath) {
+      if (req.filePath !== entry.filePath) {
         conflicts.push({
           ...entry,
           message: `the destination changed since the preview. Nothing was written.`,

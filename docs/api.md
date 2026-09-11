@@ -15,12 +15,12 @@ This version has no MCP server or OpenAPI specification.
 curl --fail-with-body http://127.0.0.1:4319/api/store
 ```
 
-The response includes `profiles`, `fragments`, `partials`, `helpers`, and targets-file content.
-Each document has a name and source text.
+The response includes `profiles`, `fragments`, `partials`, `helpers`, targets-file content, document source paths, and `catalogDirectories` (including empty folders).
+Each document has a flat-stem name, source text, and store-relative `path`.
 
 ## Save a document
 
-`PUT /api/doc` accepts `kind`, `name`, and `content`.
+`PUT /api/doc` accepts `kind`, `name`, and `content`. For a new fragment, partial, or helper, optional `directory` selects a catalog folder.
 
 ```sh
 curl --fail-with-body http://127.0.0.1:4319/api/doc \
@@ -42,6 +42,7 @@ The server accepts plain document names without path traversal.
 A save returns `{ "commit": { ... }, "path": "..." }`.
 The commit is null for an external targets file.
 Saving stores source text. It does not guarantee that the content produces valid launcher JSON.
+The first save of an existing targets file also creates the non-overwritten backup reported as `targetsBackup` by `GET /api/health` and `GET /api/store`.
 
 **Saves replace the complete document.**
 There is no expected-version field, transaction across documents, or edit lock.
@@ -90,7 +91,7 @@ After review, call `POST /api/install/apply` with the preview values:
 Use null for `expectedHash` only when the preview reports a new file.
 Otherwise, copy the entry's `existingHash`.
 Always send all three comparison values.
-The current server accepts omitted `proposedHash` and `filePath`, which skips those two comparisons.
+The server rejects an entry that omits `proposedHash` or `filePath`; request a fresh preview instead of applying an incomplete confirmation.
 
 Invalid output is refused.
 A stale comparison returns HTTP 409 with `written` and `conflicts`.
@@ -102,3 +103,15 @@ Inspect both arrays before reporting success.
 There is no file watcher, server event stream, or conflict check for document saves.
 Refresh the UI after external edits and resolve unsaved drafts before another writer saves.
 Do not use the installation checks as evidence that simultaneous document editing is safe.
+
+## Additional catalog endpoints
+
+The server remains loopback-only. Browser requests never supply executable commands.
+
+### Project catalog
+
+`GET /api/projects` runs the optional configured `projectProvider` as one executable plus literal arguments, with a bounded timeout and output buffer. It returns `{ available, measuredAt, projects, error? }`. Each project has `id`, `name`, `path`, and `launcherProfileDirectory`. Failure is data, not a server outage; ordinary editing remains available.
+
+### Recursive catalog
+
+`POST /api/catalog/directory`, `DELETE /api/catalog/directory`, and `POST /api/catalog/move` create/remove empty folders and move documents. Names remain flat stems.

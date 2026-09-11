@@ -3,8 +3,12 @@ import { deepMergeProfileParts } from "./merge";
 import { renderTemplate } from "./render";
 import { PROFILE_DOC_FIELDS } from "./schema";
 import type { BuildResult, ProfileDoc, StudioIssue } from "./types";
-import { projectLauncherFields, validateLauncherJson, validateProfileFieldSubset } from "./validate";
-import { parseYaml } from "./yaml";
+import {
+  projectLauncherFields,
+  validateLauncherJson,
+  validateProfileFieldSubset,
+} from "./validate";
+import { parseYaml, yamlNodePosition } from "./yaml";
 
 export interface StoreView {
   /** fragment stem -> YAML source */
@@ -13,6 +17,31 @@ export interface StoreView {
   partials: Record<string, string>;
   /** helper stem -> JS source */
   helpers: Record<string, string>;
+  fragmentPaths?: Record<string, string>;
+  partialPaths?: Record<string, string>;
+  helperPaths?: Record<string, string>;
+}
+
+function discardedPromptTemplateIssue(
+  value: Record<string, unknown>,
+  file: string,
+  parsed?: ReturnType<typeof parseYaml>,
+  prefix?: string,
+): StudioIssue[] {
+  const prompt = value["prompt"];
+  if (!prompt || typeof prompt !== "object" || Array.isArray(prompt) || !("template" in prompt))
+    return [];
+  const position = parsed ? yamlNodePosition(parsed, ["prompt", "template"]) : {};
+  const field = prefix ? `${prefix}.prompt.template` : "prompt.template";
+  return [
+    {
+      severity: "error",
+      file,
+      field,
+      ...position,
+      message: `${file}${position.line ? `:${position.line}` : ""}: ${field} is generated from the profile layout and would be discarded; use fragment promptText plus {{fragmentPrompts}} instead.`,
+    },
+  ];
 }
 
 /**
@@ -79,9 +108,9 @@ export function buildProfile(doc: ProfileDoc, store: StoreView): BuildResult {
   const shapeIssues = validateProfileDocShape(doc, file);
   const issues: StudioIssue[] = [...shapeIssues];
 
-  const record = (doc && typeof doc === "object" && !Array.isArray(doc)
-    ? (doc as Record<string, unknown>)
-    : {}) as Record<string, unknown>;
+  const record = (
+    doc && typeof doc === "object" && !Array.isArray(doc) ? (doc as Record<string, unknown>) : {}
+  ) as Record<string, unknown>;
   const listOf = (key: string): string[] => {
     const value = record[key];
     return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
@@ -93,12 +122,12 @@ export function buildProfile(doc: ProfileDoc, store: StoreView): BuildResult {
       : {};
   };
 
-
   // 1. imports -> deep merge, later wins
   const fragmentObjects: Array<Record<string, unknown>> = [];
+  const contributions: Array<{ name: string; source: string; file: string }> = [];
   for (const name of listOf("imports")) {
     const source = store.fragments[name];
-    const fragFile = `catalog/config/${name}.yaml`;
+    const fragFile = store.fragmentPaths?.[name] ?? `catalog/config/${name}.yaml`;
     if (source === undefined) {
       issues.push({
         severity: "error",
@@ -110,12 +139,28 @@ export function buildProfile(doc: ProfileDoc, store: StoreView): BuildResult {
     const parsed = parseYaml<Record<string, unknown>>(source, fragFile);
     issues.push(...parsed.issues);
     if (parsed.value) {
-      issues.push(...validateProfileFieldSubset(parsed.value, fragFile, "fragment"));
-      fragmentObjects.push(parsed.value);
+      const { promptText, ...launcherFields } = parsed.value;
+      if (promptText !== undefined && typeof promptText !== "string") {
+        const position = yamlNodePosition(parsed, ["promptText"]);
+        issues.push({
+          severity: "error",
+          file: fragFile,
+          field: "promptText",
+          ...position,
+          message: `${fragFile}${position.line ? `:${position.line}` : ""}: promptText must be a string.`,
+        });
+      } else if (typeof promptText === "string") {
+        contributions.push({ name, source: promptText, file: fragFile });
+      }
+      issues.push(...discardedPromptTemplateIssue(launcherFields, fragFile, parsed));
+      issues.push(...validateProfileFieldSubset(launcherFields, fragFile, "fragment"));
+      fragmentObjects.push(launcherFields);
     }
   }
 
   issues.push(...validateProfileFieldSubset(record["overrides"] ?? {}, file, "overrides"));
+  issues.push(...discardedPromptTemplateIssue(mapOf("overrides"), file, undefined, "overrides"));
+  issues.push(...discardedPromptTemplateIssue(mapOf("variables"), file, undefined, "variables"));
 
   // 2. fragments -> variables -> overrides, in that order
   const renderInput = deepMergeProfileParts([
@@ -131,6 +176,9 @@ export function buildProfile(doc: ProfileDoc, store: StoreView): BuildResult {
     layout,
     partials: store.partials,
     helpers: store.helpers,
+    partialPaths: store.partialPaths,
+    helperPaths: store.helperPaths,
+    contributions,
     input: renderInput,
     file,
   });
@@ -164,7 +212,8 @@ export function buildProfile(doc: ProfileDoc, store: StoreView): BuildResult {
       mergedPrompt && typeof mergedPrompt === "object" && "mode" in mergedPrompt
         ? (mergedPrompt as { mode?: unknown }).mode
         : undefined;
-    fields["prompt"] = mode === undefined ? { template: promptText } : { template: promptText, mode };
+    fields["prompt"] =
+      mode === undefined ? { template: promptText } : { template: promptText, mode };
   }
 
   // 6. validate against the launcher schema

@@ -5,8 +5,14 @@ import { deepMergeProfileParts } from "../src/core/merge";
 import { buildProfile, type StoreView } from "../src/core/pipeline";
 import { PROFILE_FIELDS } from "../src/core/schema";
 import { SEED_FILES } from "../src/core/seed";
-import { validateLauncherJson, validateProfileFieldSubset } from "../src/core/validate";
-import { parseYaml } from "../src/core/yaml";
+import type { ProfileDoc } from "../src/core/types";
+import {
+  validateLauncherJson,
+  validateProfileFieldSubset,
+  validateTargets,
+} from "../src/core/validate";
+import { parseYaml, updateYamlPath } from "../src/core/yaml";
+import { isDraftDirty } from "../src/core/drafts";
 
 function seedView(overrides: Partial<StoreView> = {}): StoreView {
   const pick = (prefix: string, ext: string) =>
@@ -62,7 +68,56 @@ describe("deep merge semantics", () => {
   });
 });
 
+describe("source-preserving profile edits", () => {
+  it("keeps selection clean and raises dirty only for changed document bytes", () => {
+    expect(isDraftDirty("role: reviewer\n", undefined)).toBe(false);
+    expect(isDraftDirty("role: reviewer\n", "role: reviewer\n")).toBe(false);
+    expect(isDraftDirty("role: reviewer\n", "role: editor\n")).toBe(true);
+  });
+  it("changes one structured field while preserving comments, order, quoting and list comments", () => {
+    const source = `# profile comment\nrole: 'quoted-role'\nimports:\n  - first # keep this item comment\nlayout: |\n  Hello\nvariables:\n  quoted: "still quoted"\ntargets: []\n`;
+    const updated = updateYamlPath(
+      source,
+      "profiles/quoted-role.yaml",
+      ["imports"],
+      ["first", "second"],
+    );
+    expect(updated.issues).toEqual([]);
+    expect(updated.text).toContain("# profile comment");
+    expect(updated.text).toContain("role: 'quoted-role'");
+    expect(updated.text).toContain("first # keep this item comment");
+    expect(updated.text.indexOf("layout:")).toBeLessThan(updated.text.indexOf("variables:"));
+    expect(updated.text).toContain('quoted: "still quoted"');
+    expect(parseYaml<ProfileDoc>(updated.text, "profiles/quoted-role.yaml").value?.imports).toEqual(
+      ["first", "second"],
+    );
+  });
+
+  it("leaves invalid YAML byte-for-byte unchanged when structured editing is attempted", () => {
+    const source = "role: x\nimports: [broken\n";
+    const updated = updateYamlPath(source, "profiles/x.yaml", ["imports"], ["a"]);
+    expect(updated.text).toBe(source);
+    expect(updated.issues.length).toBeGreaterThan(0);
+  });
+});
+
 describe("validation", () => {
+  it("accepts exactly one governed or standalone target selector", () => {
+    expect(
+      validateTargets(
+        {
+          governed: { project: "example-project" },
+          standalone: { directory: "./profiles" },
+        },
+        "targets.yaml",
+      ),
+    ).toEqual([]);
+    expect(
+      validateTargets({ both: { project: "example", directory: "./profiles" } }, "targets.yaml"),
+    ).toHaveLength(1);
+    expect(validateTargets({ neither: {} }, "targets.yaml")).toHaveLength(1);
+  });
+
   it("rejects an unknown field in a fragment, naming file and field", () => {
     const issues = validateProfileFieldSubset(
       { model: "x", temperature: 0.4 },
@@ -144,6 +199,38 @@ describe("dollar placeholders", () => {
 });
 
 describe("render pipeline", () => {
+  it("rejects fragment prompt.template instead of silently discarding it, including without a layout", () => {
+    const view = seedView({
+      fragments: { bad: "prompt:\n  template: lost words\n  mode: replace\n" },
+    });
+    const built = buildProfile({ role: "x", imports: ["bad"] }, view);
+    const issue = built.issues.find((i) => i.field === "prompt.template");
+    expect(issue?.file).toBe("catalog/config/bad.yaml");
+    expect(issue?.line).toBe(2);
+    expect(issue?.message).toContain("would be discarded");
+    expect(built.valid).toBe(false);
+  });
+
+  it("preserves prompt.mode while rejecting template assignments through overrides and variables", () => {
+    const modeOnly = buildProfile(
+      { role: "x", layout: "hello", imports: ["mode"] },
+      seedView({ fragments: { mode: "prompt:\n  mode: replace\n" } }),
+    );
+    expect(modeOnly.json).toHaveProperty("prompt.mode", "replace");
+    expect(modeOnly.valid).toBe(true);
+    const built = buildProfile(
+      {
+        role: "x",
+        variables: { prompt: { template: "lost" } },
+        overrides: { prompt: { template: "also lost" } },
+      },
+      seedView(),
+    );
+    expect(built.issues.map((i) => i.field)).toEqual(
+      expect.arrayContaining(["variables.prompt.template", "overrides.prompt.template"]),
+    );
+  });
+
   it("names a missing partial", () => {
     const view = seedView();
     delete view.partials["write-boundary"];
@@ -172,6 +259,100 @@ describe("render pipeline", () => {
     const built = buildProfile({ ...seedProfile, layout } as never, view);
     expect(built.valid).toBe(true);
     expect(built.renderMs).toBeLessThan(100);
+  });
+
+  it("reports self and multi-node cycles by name through buildProfile", () => {
+    const self = buildProfile(
+      { role: "x", layout: "{{> a}}" },
+      seedView({ partials: { a: "{{> a}}" } }),
+    );
+    expect(self.issues.some((i) => i.message.includes("layout -> a -> a"))).toBe(true);
+    const multi = buildProfile(
+      { role: "x", layout: "{{> a}}" },
+      seedView({ partials: { a: "{{> b}}", b: "{{> a}}" } }),
+    );
+    expect(multi.issues.some((i) => i.message.includes("layout -> a -> b -> a"))).toBe(true);
+  });
+
+  it("rejects excessive acyclic template depth before Handlebars renders", () => {
+    const partials: Record<string, string> = {};
+    for (let i = 0; i < 65; i += 1) partials[`p${i}`] = i === 64 ? "end" : `{{> p${i + 1}}}`;
+    const built = buildProfile({ role: "x", layout: "{{> p0}}" }, seedView({ partials }));
+    expect(built.issues.some((i) => i.message.includes("exceeds the supported limit"))).toBe(true);
+  });
+
+  it("does not confuse a wide shallow graph with excessive depth", () => {
+    const partials = Object.fromEntries(Array.from({ length: 70 }, (_, i) => [`p${i}`, `${i}`]));
+    const layout = Object.keys(partials)
+      .map((name) => `{{> ${name}}}`)
+      .join(" ");
+    const built = buildProfile({ role: "x", layout }, seedView({ partials }));
+    expect(built.valid).toBe(true);
+  });
+});
+
+describe("fragment prompt contributions", () => {
+  it("renders declared contributions in import order at explicit placement and strips metadata", () => {
+    const built = buildProfile(
+      {
+        role: "x",
+        imports: ["a", "b", "a"],
+        layout: "Top\n{{fragmentPrompts}}\nBottom",
+        variables: { who: "reader" },
+      },
+      seedView({
+        fragments: {
+          a: "autonomy: read_only\npromptText: 'A {{who}}'\n",
+          b: "effort: high\npromptText: '{{> words}}'\n",
+        },
+        partials: { words: "B words" },
+      }),
+    );
+    expect(built.promptText).toBe("Top\nA reader\n\nB words\n\nA reader\nBottom");
+    expect(built.json).not.toHaveProperty("promptText");
+    expect(built.valid).toBe(true);
+  });
+
+  it("warns instead of appending contributions when placement is absent", () => {
+    const built = buildProfile(
+      { role: "x", imports: ["a"], layout: "Only layout" },
+      seedView({ fragments: { a: "promptText: hidden\n" } }),
+    );
+    expect(built.promptText).toBe("Only layout");
+    expect(
+      built.issues.some((i) => i.severity === "warning" && i.field === "fragmentPrompts"),
+    ).toBe(true);
+  });
+
+  it("keeps braces in ordinary fragment strings literal and rejects reserved-name collisions", () => {
+    const literal = buildProfile(
+      { role: "x", imports: ["a"], layout: "{{settings}}" },
+      seedView({ fragments: { a: "settings: 'literal {{not-rendered}}'\n" } }),
+    );
+    expect(literal.promptText).toBe("literal {{not-rendered}}");
+    const collision = buildProfile(
+      { role: "x", layout: "x", variables: { fragmentPrompts: "no" } },
+      seedView(),
+    );
+    expect(collision.valid).toBe(false);
+  });
+
+  it("rejects direct and partial-reached fragmentPrompts plus contribution cycles", () => {
+    const direct = buildProfile(
+      { role: "x", imports: ["a"], layout: "{{fragmentPrompts}}" },
+      seedView({ fragments: { a: "promptText: '{{fragmentPrompts}}'\n" } }),
+    );
+    expect(direct.issues.some((i) => i.message.includes("reserved for the profile layout"))).toBe(
+      true,
+    );
+    const cycle = buildProfile(
+      { role: "x", imports: ["a"], layout: "{{fragmentPrompts}}" },
+      seedView({
+        fragments: { a: "promptText: '{{> p}}'\n" },
+        partials: { p: "{{> q}}", q: "{{> p}}" },
+      }),
+    );
+    expect(cycle.issues.some((i) => i.message.includes("fragment:a#1 -> p -> q -> p"))).toBe(true);
   });
 });
 

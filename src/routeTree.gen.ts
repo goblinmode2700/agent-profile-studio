@@ -14,6 +14,7 @@ import { Route as FragmentsRouteImport } from './routes/fragments'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as PartialsRouteImport } from './routes/partials'
 import { Route as PlaygroundRouteImport } from './routes/playground'
+import { Route as ProjectsRouteImport } from './routes/projects'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,6 +41,11 @@ const PlaygroundRoute = PlaygroundRouteImport.update({
   path: '/playground',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsRoute = ProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/history': typeof HistoryRoute
   '/partials': typeof PartialsRoute
   '/playground': typeof PlaygroundRoute
+  '/projects': typeof ProjectsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/history': typeof HistoryRoute
   '/partials': typeof PartialsRoute
   '/playground': typeof PlaygroundRoute
+  '/projects': typeof ProjectsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +70,23 @@ export interface FileRoutesById {
   '/history': typeof HistoryRoute
   '/partials': typeof PartialsRoute
   '/playground': typeof PlaygroundRoute
+  '/projects': typeof ProjectsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/fragments' | '/history' | '/partials' | '/playground'
+  fullPaths:
+    '/' | '/fragments' | '/history' | '/partials' | '/playground' | '/projects'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/fragments' | '/history' | '/partials' | '/playground'
-  id: '__root__' | '/' | '/fragments' | '/history' | '/partials' | '/playground'
+  to:
+    '/' | '/fragments' | '/history' | '/partials' | '/playground' | '/projects'
+  id:
+    | '__root__'
+    | '/'
+    | '/fragments'
+    | '/history'
+    | '/partials'
+    | '/playground'
+    | '/projects'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -77,6 +95,7 @@ export interface RootRouteChildren {
   HistoryRoute: typeof HistoryRoute
   PartialsRoute: typeof PartialsRoute
   PlaygroundRoute: typeof PlaygroundRoute
+  ProjectsRoute: typeof ProjectsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -116,6 +135,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlaygroundRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects': {
+      id: '/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -125,6 +151,7 @@ const rootRouteChildren: RootRouteChildren = {
   HistoryRoute: HistoryRoute,
   PartialsRoute: PartialsRoute,
   PlaygroundRoute: PlaygroundRoute,
+  ProjectsRoute: ProjectsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

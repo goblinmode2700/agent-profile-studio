@@ -53,7 +53,20 @@ export function validateProfileFieldSubset(
   }
   const issues: StudioIssue[] = [];
   const record = value as Record<string, unknown>;
+  if (
+    label === "fragment" &&
+    record["promptText"] !== undefined &&
+    typeof record["promptText"] !== "string"
+  ) {
+    issues.push({
+      severity: "error",
+      file,
+      field: "promptText",
+      message: `${file}: promptText must be a string.`,
+    });
+  }
   for (const key of Object.keys(record)) {
+    if (label === "fragment" && key === "promptText") continue;
     if (!PROFILE_FIELDS.includes(key)) {
       issues.push({
         severity: "error",
@@ -84,6 +97,35 @@ export function validateProfileFieldSubset(
   return issues;
 }
 
+export function validateTargets(value: unknown, file: string): StudioIssue[] {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) {
+    return [{ severity: "error", file, message: `${file}: targets must be a mapping.` }];
+  }
+  return Object.entries(value as Record<string, unknown>).flatMap(([name, definition]) => {
+    if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
+      return [
+        {
+          severity: "error" as const,
+          file,
+          field: name,
+          message: `${file}: target "${name}" must specify exactly one of "directory" or "project".`,
+        },
+      ];
+    }
+    const target = definition as Record<string, unknown>;
+    const hasDirectory = typeof target["directory"] === "string" && target["directory"] !== "";
+    const hasProject = typeof target["project"] === "string" && target["project"] !== "";
+    if (hasDirectory !== hasProject) return [];
+    return [
+      {
+        severity: "error" as const,
+        file,
+        field: name,
+        message: `${file}: target "${name}" must specify exactly one of "directory" or "project".`,
+      },
+    ];
+  });
+}
 
 /** Only schema-defined keys reach the launcher JSON. Template variables never leak. */
 export function projectLauncherFields(input: Record<string, unknown>): Record<string, unknown> {

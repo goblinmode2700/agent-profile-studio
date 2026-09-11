@@ -8,9 +8,12 @@ import { buildProfile, parseProfileDoc, type StoreView } from "../src/core/pipel
 import type { InstallPlanEntry } from "../src/core/types";
 import { parseYaml } from "../src/core/yaml";
 import { Store, StoreError, assertDocName, assertInside, realResolve, sha256 } from "./store";
+import type { StudioConfig } from "./config";
+import { queryProjects } from "./projects";
 
 export interface TargetDef {
-  directory: string;
+  directory?: string;
+  project?: string;
 }
 
 export async function loadTargets(
@@ -37,7 +40,16 @@ export async function storeView(store: Store): Promise<StoreView> {
   ]);
   const toMap = (list: Array<{ name: string; content: string }>) =>
     Object.fromEntries(list.map((d) => [d.name, d.content]));
-  return { fragments: toMap(fragments), partials: toMap(partials), helpers: toMap(helpers) };
+  const paths = (list: Array<{ name: string; path?: string }>) =>
+    Object.fromEntries(list.filter((d) => d.path).map((d) => [d.name, d.path!]));
+  return {
+    fragments: toMap(fragments),
+    partials: toMap(partials),
+    helpers: toMap(helpers),
+    fragmentPaths: paths(fragments),
+    partialPaths: paths(partials),
+    helperPaths: paths(helpers),
+  };
 }
 
 export function resolveTargetDir(store: Store, directory: string): string {
@@ -51,13 +63,21 @@ export function resolveTargetDir(store: Store, directory: string): string {
  */
 export function resolveOutputFile(dir: string, role: unknown): string {
   if (typeof role !== "string") {
-    throw new StoreError(`profile "role" must be a string, not ${Array.isArray(role) ? "a list" : typeof role}.`);
+    throw new StoreError(
+      `profile "role" must be a string, not ${Array.isArray(role) ? "a list" : typeof role}.`,
+    );
   }
   assertDocName(role);
   const fileName = `${role}.json`;
   const candidate = path.join(dir, fileName);
-  if (path.basename(candidate) !== fileName || path.dirname(path.resolve(candidate)) !== path.resolve(dir)) {
-    throw new StoreError(`profile "role" does not produce a file inside the target directory.`, 403);
+  if (
+    path.basename(candidate) !== fileName ||
+    path.dirname(path.resolve(candidate)) !== path.resolve(dir)
+  ) {
+    throw new StoreError(
+      `profile "role" does not produce a file inside the target directory.`,
+      403,
+    );
   }
   assertInside(dir, candidate, `output file "${fileName}"`);
   return realResolve(candidate);
@@ -75,14 +95,17 @@ export async function planInstall(
   store: Store,
   targetsFile: string,
   role: string,
+  projectProvider?: StudioConfig["projectProvider"],
 ): Promise<InstallPlanResult> {
   assertDocName(role);
   const source = await store.read("profile", role);
   const parsed = parseProfileDoc(source, role);
-  if (!parsed.value) throw new StoreError(parsed.issues[0]?.message ?? `profiles/${role}.yaml is empty`);
+  if (!parsed.value)
+    throw new StoreError(parsed.issues[0]?.message ?? `profiles/${role}.yaml is empty`);
   const view = await storeView(store);
   const built = buildProfile(parsed.value, view);
   const targets = await loadTargets(store, targetsFile);
+  const governed = await queryProjects(projectProvider ? { projectProvider } : {});
   const entries: InstallPlanEntry[] = [];
   const proposedBytes = Buffer.from(built.jsonText, "utf8");
   const proposedHash = sha256(proposedBytes);
@@ -100,17 +123,54 @@ export async function planInstall(
       continue;
     }
     const def = targets[name];
-    if (!def?.directory || typeof def.directory !== "string") {
+    if (!def || (def.directory !== undefined && def.project !== undefined)) {
       entries.push({
         target: name,
         directory: "",
         filePath: "",
         status: "error",
-        message: `${targetsFile}: unknown target "${name}" or missing "directory".`,
+        message: `${targetsFile}: target "${name}" must specify exactly one of "directory" or "project".`,
       });
       continue;
     }
-    const dir = resolveTargetDir(store, def.directory);
+    let dir: string;
+    if (typeof def.project === "string") {
+      const project = governed.projects.find((candidate) => candidate.id === def.project);
+      if (!governed.available || !project) {
+        entries.push({
+          target: name,
+          directory: "",
+          filePath: "",
+          status: "error",
+          message: !governed.available
+            ? `project catalog unavailable: ${governed.error}`
+            : `${targetsFile}: target "${name}" names unknown project "${def.project}".`,
+        });
+        continue;
+      }
+      if (!path.isAbsolute(project.path) || !path.isAbsolute(project.launcherProfileDirectory)) {
+        entries.push({
+          target: name,
+          directory: "",
+          filePath: "",
+          status: "error",
+          message: `project provider returned non-absolute paths for "${project.id}".`,
+        });
+        continue;
+      }
+      dir = realResolve(project.launcherProfileDirectory);
+    } else if (typeof def.directory === "string" && def.directory)
+      dir = resolveTargetDir(store, def.directory);
+    else {
+      entries.push({
+        target: name,
+        directory: "",
+        filePath: "",
+        status: "error",
+        message: `${targetsFile}: target "${name}" needs "directory" or "project".`,
+      });
+      continue;
+    }
     let filePath: string;
     try {
       filePath = resolveOutputFile(dir, built.role);
@@ -171,9 +231,9 @@ export interface ApplyRequestEntry {
   /** sha256 of the bytes on disk the user saw, or null if the user saw "new". */
   expectedHash: string | null;
   /** sha256 of the exact output bytes the user confirmed. */
-  proposedHash?: string;
+  proposedHash: string;
   /** the destination the user saw resolved. */
-  filePath?: string;
+  filePath: string;
 }
 
 /**
@@ -187,9 +247,11 @@ export async function applyInstall(
   targetsFile: string,
   role: string,
   requested: ApplyRequestEntry[],
+  projectProvider?: StudioConfig["projectProvider"],
 ): Promise<{ written: InstallPlanEntry[]; conflicts: InstallPlanEntry[] }> {
-  const plan = await planInstall(store, targetsFile, role);
-  if (!plan.valid) throw new StoreError(`profiles/${role}.yaml does not validate; refusing to install.`);
+  const plan = await planInstall(store, targetsFile, role, projectProvider);
+  if (!plan.valid)
+    throw new StoreError(`profiles/${role}.yaml does not validate; refusing to install.`);
   const written: InstallPlanEntry[] = [];
   const conflicts: InstallPlanEntry[] = [];
   const proposedBytes = Buffer.from(plan.jsonText, "utf8");
@@ -198,11 +260,25 @@ export async function applyInstall(
     const entry = plan.entries.find((e) => e.target === req.target);
     if (!entry || entry.status === "error") {
       conflicts.push(
-        entry ?? { target: req.target, directory: "", filePath: "", status: "error", message: "unknown target" },
+        entry ?? {
+          target: req.target,
+          directory: "",
+          filePath: "",
+          status: "error",
+          message: "unknown target",
+        },
       );
       continue;
     }
-    if (req.proposedHash !== undefined && req.proposedHash !== plan.proposedHash) {
+    if (typeof req.proposedHash !== "string" || typeof req.filePath !== "string") {
+      conflicts.push({
+        ...entry,
+        status: "changed",
+        message: `install confirmation must include the preview's proposedHash and filePath. Nothing was written; request a fresh preview.`,
+      });
+      continue;
+    }
+    if (req.proposedHash !== plan.proposedHash) {
       conflicts.push({
         ...entry,
         status: "changed",
@@ -210,7 +286,7 @@ export async function applyInstall(
       });
       continue;
     }
-    if (req.filePath !== undefined && req.filePath !== entry.filePath) {
+    if (req.filePath !== entry.filePath) {
       conflicts.push({
         ...entry,
         status: "changed",

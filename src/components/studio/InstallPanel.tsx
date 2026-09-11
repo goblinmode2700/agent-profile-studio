@@ -31,7 +31,9 @@ export function InstallPanel({ role, dirty }: { role: string; dirty: boolean }) 
       const next = await api.installPreview(role);
       setPlan(next);
       setChosen(
-        Object.fromEntries(next.entries.map((e) => [e.target, e.status === "new" || e.status === "changed"])),
+        Object.fromEntries(
+          next.entries.map((e) => [e.target, e.status === "new" || e.status === "changed"]),
+        ),
       );
       setError(null);
     } catch (err) {
@@ -55,8 +57,8 @@ export function InstallPanel({ role, dirty }: { role: string; dirty: boolean }) 
       .map((e) => ({
         target: e.target,
         expectedHash: e.existingHash ?? null,
-        ...(e.proposedHash ? { proposedHash: e.proposedHash } : {}),
-        ...(e.filePath ? { filePath: e.filePath } : {}),
+        proposedHash: e.proposedHash!,
+        filePath: e.filePath,
       }));
     if (entries.length === 0) return;
 
@@ -82,7 +84,8 @@ export function InstallPanel({ role, dirty }: { role: string; dirty: boolean }) 
     }
   };
 
-  const changedCount = plan?.entries.filter((e) => chosen[e.target] && e.status !== "error").length ?? 0;
+  const changedCount =
+    plan?.entries.filter((e) => chosen[e.target] && e.status !== "error").length ?? 0;
 
   return (
     <Panel
@@ -92,7 +95,11 @@ export function InstallPanel({ role, dirty }: { role: string; dirty: boolean }) 
           <Button size="xs" variant="ghost" onClick={() => void preview()} disabled={busy}>
             <RefreshCw className="size-3" /> Re-check
           </Button>
-          <Button size="xs" onClick={() => void write()} disabled={busy || changedCount === 0 || !plan?.valid}>
+          <Button
+            size="xs"
+            onClick={() => void write()}
+            disabled={busy || changedCount === 0 || !plan?.valid}
+          >
             <Download className="size-3" /> Write {changedCount || ""}
           </Button>
         </>
@@ -115,7 +122,10 @@ export function InstallPanel({ role, dirty }: { role: string; dirty: boolean }) 
         </p>
       )}
       {plan && plan.entries.length === 0 && (
-        <EmptyState title="No targets" hint="Add targets to this profile, and define their directories in targets.yaml." />
+        <EmptyState
+          title="No targets"
+          hint="Add targets to this profile, and define their directories in targets.yaml."
+        />
       )}
       <ul className="divide-y">
         {(plan?.entries ?? []).map((entry) => (
@@ -124,7 +134,9 @@ export function InstallPanel({ role, dirty }: { role: string; dirty: boolean }) 
               <Checkbox
                 checked={!!chosen[entry.target]}
                 disabled={entry.status === "error"}
-                onCheckedChange={(v) => setChosen((prev) => ({ ...prev, [entry.target]: v === true }))}
+                onCheckedChange={(v) =>
+                  setChosen((prev) => ({ ...prev, [entry.target]: v === true }))
+                }
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-mono text-[11px] text-foreground">{entry.target}</p>
@@ -132,7 +144,9 @@ export function InstallPanel({ role, dirty }: { role: string; dirty: boolean }) 
                   {entry.filePath || entry.message}
                 </p>
               </div>
-              <span className={`shrink-0 font-mono text-[10px] uppercase ${STATUS_STYLE[entry.status]}`}>
+              <span
+                className={`shrink-0 font-mono text-[10px] uppercase ${STATUS_STYLE[entry.status]}`}
+              >
                 {entry.status}
               </span>
             </div>
