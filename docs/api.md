@@ -102,3 +102,14 @@ Inspect both arrays before reporting success.
 There is no file watcher, server event stream, or conflict check for document saves.
 Refresh the UI after external edits and resolve unsaved drafts before another writer saves.
 Do not use the installation checks as evidence that simultaneous document editing is safe.
+## Additional catalog endpoints
+
+The server remains loopback-only. Browser requests never supply executable commands.
+
+### Project catalog
+
+`GET /api/projects` runs the optional configured `projectProvider` as one executable plus literal arguments, with a bounded timeout and output buffer. It returns `{ available, measuredAt, projects, error? }`. Each project has `id`, `name`, `path`, and `launcherProfileDirectory`. Failure is data, not a server outage; ordinary editing remains available.
+
+### Recursive catalog
+
+`GET /api/store` includes document `path` metadata and `catalogDirectories`. `PUT /api/doc` accepts an optional `directory` for a newly created fragment, partial, or helper. `POST /api/catalog/directory`, `DELETE /api/catalog/directory`, and `POST /api/catalog/move` create/remove empty folders and move documents. Names remain flat stems.

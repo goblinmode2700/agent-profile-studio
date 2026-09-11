@@ -21,7 +21,7 @@ export interface InstallConfirmation {
 export interface StudioApi {
   mode: "local" | "demo";
   getStore(): Promise<StoreSnapshot>;
-  saveDoc(kind: DocKind, name: string, content: string): Promise<CommitInfo | null>;
+  saveDoc(kind: DocKind, name: string, content: string, directory?: string): Promise<CommitInfo | null>;
   deleteDoc(kind: DocKind, name: string): Promise<void>;
   history(kind: DocKind, name: string): Promise<CommitInfo[]>;
   version(kind: DocKind, name: string, oid: string): Promise<string>;
@@ -32,6 +32,10 @@ export interface StudioApi {
     role: string,
     entries: InstallConfirmation[],
   ): Promise<{ written: InstallPlanEntry[]; conflicts: InstallPlanEntry[] }>;
+  createDirectory(directory: string): Promise<void>;
+  deleteDirectory(directory: string): Promise<void>;
+  moveDoc(kind: "fragment" | "partial" | "helper", name: string, directory: string): Promise<void>;
+  getProjects(): Promise<{ available: boolean; measuredAt: string; projects: Array<{ id: string; name: string; path: string; launcherProfileDirectory: string }>; error?: string }>;
 }
 
 
@@ -58,11 +62,23 @@ class LocalApi implements StudioApi {
   getStore() {
     return this.call<StoreSnapshot>("/api/store");
   }
-  saveDoc(kind: DocKind, name: string, content: string) {
+  getProjects() {
+    return this.call<{ available: boolean; measuredAt: string; projects: Array<{ id: string; name: string; path: string; launcherProfileDirectory: string }>; error?: string }>("/api/projects");
+  }
+  saveDoc(kind: DocKind, name: string, content: string, directory?: string) {
     return this.call<{ commit: CommitInfo | null }>("/api/doc", {
       method: "PUT",
-      body: JSON.stringify({ kind, name, content }),
+      body: JSON.stringify({ kind, name, content, directory }),
     }).then((r) => r.commit);
+  }
+  async createDirectory(directory: string) {
+    await this.call("/api/catalog/directory", { method: "POST", body: JSON.stringify({ directory }) });
+  }
+  async deleteDirectory(directory: string) {
+    await this.call(`/api/catalog/directory?directory=${encodeURIComponent(directory)}`, { method: "DELETE" });
+  }
+  async moveDoc(kind: "fragment" | "partial" | "helper", name: string, directory: string) {
+    await this.call("/api/catalog/move", { method: "POST", body: JSON.stringify({ kind, name, directory }) });
   }
 
   async deleteDoc(kind: DocKind, name: string) {

@@ -11,7 +11,7 @@ No account, hosted service, database, or agent launcher is required.
 ## What it does
 
 - Compose profiles from YAML fragments with an explicit merge order.
-- Reuse Handlebars partials and JavaScript helpers.
+- Reuse Handlebars partials, explicit fragment `promptText`, and JavaScript helpers.
 - Edit profiles, fragments, partials, and scratch templates with CodeMirror.
 - Check the output against a shared JSON Schema in the browser and server.
 - Save documents as git commits, compare versions, and restore earlier content.
@@ -76,7 +76,7 @@ targets:
   - main-project
 ```
 
-The default store layout is:
+The seeded store layout is shown below. Catalog directories are filing only: `.yaml`, `.hbs`, and `.js` determine document kind at any depth, while the flat stem remains its identity.
 
 ```text
 store/
@@ -95,6 +95,7 @@ Only schema-defined fields reach the output JSON.
 
 Fragments and overrides reject unknown profile fields.
 Variables can contain additional template data.
+Fragments may declare a Studio-only `promptText` string. Place imported contributions explicitly with `{{fragmentPrompts}}` in the profile layout. The field never reaches launcher JSON.
 
 ## Output format
 
@@ -123,6 +124,20 @@ Edit `studio.config.json`:
   "allowedOrigins": ["http://localhost:8080", "http://127.0.0.1:8080"]
 }
 ```
+
+An optional governed project catalog uses an executable plus literal arguments, never a shell string:
+
+```json
+{
+  "projectProvider": {
+    "executable": "/absolute/path/to/provider",
+    "args": ["projects", "--json"],
+    "timeoutMs": 2000
+  }
+}
+```
+
+Provider output is either an array or `{ "projects": [...] }`. Each record must contain nonempty strings `id`, `name`, `path`, and `launcherProfileDirectory`. Project target aliases use `{ "project": "stable-id" }`; standalone aliases continue to use `{ "directory": "..." }`. A target cannot specify both. The provider is queried again during apply, so a mapping change requires a new preview.
 
 `STUDIO_STORE`, `STUDIO_TARGETS`, and `STUDIO_PORT` override the file.
 `VITE_STUDIO_API` sets the server address used by the interface.

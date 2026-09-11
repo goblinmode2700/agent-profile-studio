@@ -50,9 +50,9 @@ function FragmentsPage() {
 
   const filePath = selected
     ? selected.kind === "fragment"
-      ? `catalog/config/${selected.name}.yaml`
+      ? fragments.find((doc) => doc.name === selected.name)?.path ?? `catalog/config/${selected.name}.yaml`
       : selected.kind === "helper"
-        ? `catalog/helpers/${selected.name}.js`
+        ? helpers.find((doc) => doc.name === selected.name)?.path ?? `catalog/helpers/${selected.name}.js`
         : "targets.yaml"
     : "";
 
@@ -71,7 +71,7 @@ function FragmentsPage() {
           message: `targets.yaml: target "${name}" needs a "directory".`,
         }));
     }
-    return validateProfileFieldSubset(parsed.value ?? {}, filePath);
+    return validateProfileFieldSubset(parsed.value ?? {}, filePath, "fragment");
   }, [filePath, selected, source]);
 
   const importedBy = useMemo(() => {

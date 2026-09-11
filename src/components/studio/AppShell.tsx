@@ -1,14 +1,16 @@
 import { Link } from "@tanstack/react-router";
-import { Boxes, FileCode2, FlaskConical, GitBranch, Layers, Puzzle } from "lucide-react";
+import { Boxes, FileCode2, FlaskConical, FolderKanban, GitBranch, Layers, Puzzle } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { useStudio } from "@/lib/studio";
 import { cn } from "@/lib/utils";
+import { CatalogTree } from "@/components/studio/CatalogTree";
 
 const NAV = [
   { to: "/", label: "Profiles", icon: Layers },
   { to: "/partials", label: "Partials", icon: Puzzle },
   { to: "/fragments", label: "Fragments", icon: Boxes },
+  { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/playground", label: "Playground", icon: FlaskConical },
   { to: "/history", label: "History", icon: GitBranch },
 ] as const;
@@ -39,6 +41,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           ))}
         </nav>
+        <CatalogTree />
         <div className="mt-auto space-y-1.5 border-t p-2.5">
           <p
             className={cn(

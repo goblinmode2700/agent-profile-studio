@@ -49,6 +49,7 @@ function PartialsPage() {
   }, [partials, selected]);
 
   const source = selected ? content("partial", selected) : "";
+  const selectedPath = partials.find((doc) => doc.name === selected)?.path ?? `catalog/prompt/${selected}.hbs`;
 
   const result = useMemo(() => {
     if (!selected) return null;
@@ -58,7 +59,7 @@ function PartialsPage() {
       partials: view.partials,
       helpers: view.helpers,
       input: parsedInput.value ?? {},
-      file: `catalog/prompt/${selected}.hbs`,
+      file: selectedPath,
     });
     const dollars = validateDollarPlaceholders(rendered.text, { partial: selected });
     return {
@@ -66,7 +67,7 @@ function PartialsPage() {
       issues: [...parsedInput.issues, ...rendered.issues, ...dollars],
       ms: rendered.ms,
     };
-  }, [inputText, selected, view]);
+  }, [inputText, selected, selectedPath, view]);
 
   const usedBy = useMemo(() => {
     if (!selected) return [];
@@ -103,7 +104,7 @@ function PartialsPage() {
           <div className="grid min-h-0 grid-rows-2 gap-2">
             <div className="grid min-h-0 grid-cols-[1.6fr_1fr] gap-2">
               <Panel
-                title={`catalog/prompt/${selected}.hbs`}
+                title={selectedPath}
                 actions={
                   <>
                     {dirty && <span className="font-mono text-[10px] text-primary">unsaved</span>}

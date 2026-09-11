@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import type { StoreView } from "@/core/pipeline";
 import type { CommitInfo, DocKind, StoreDoc, StoreSnapshot } from "@/core/types";
+import { isDraftDirty } from "@/core/drafts";
 
 import { connect, DEFAULT_LOCAL_API, type StudioApi } from "./api";
 
@@ -32,6 +33,11 @@ interface StudioContextValue {
   /** Fragments / partials / helpers as the render pipeline wants them, drafts included. */
   view: StoreView;
   list(kind: DocKind): StoreDoc[];
+  catalogDirectory: string;
+  setCatalogDirectory(directory: string): void;
+  createDirectory(name: string): Promise<void>;
+  removeDirectory(directory: string): Promise<void>;
+  moveDoc(kind: "fragment" | "partial" | "helper", name: string, directory: string): Promise<void>;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
@@ -47,6 +53,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [restoreTick, setRestoreTick] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [catalogDirectory, setCatalogDirectory] = useState("catalog");
   const apiRef = useRef<StudioApi | null>(null);
 
   useEffect(() => {
@@ -118,7 +125,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const isDirty = useCallback(
     (kind: DocKind, name: string) => {
       const draft = drafts[key(kind, name)];
-      return draft !== undefined && draft !== saved(kind, name);
+      return isDraftDirty(saved(kind, name), draft);
     },
     [drafts, saved],
   );
@@ -163,7 +170,12 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     async (kind: DocKind, name: string, initial: string) => {
       if (!apiRef.current) return;
       try {
-        await apiRef.current.saveDoc(kind, name, initial);
+        await apiRef.current.saveDoc(
+          kind,
+          name,
+          initial,
+          kind === "fragment" || kind === "partial" || kind === "helper" ? catalogDirectory : undefined,
+        );
         await reload();
         toast.success(`Created ${name}`);
       } catch (err) {
@@ -171,8 +183,29 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [reload],
+    [catalogDirectory, reload],
   );
+
+  const createDirectory = useCallback(async (name: string) => {
+    if (!apiRef.current) return;
+    const directory = `${catalogDirectory}/${name}`;
+    await apiRef.current.createDirectory(directory);
+    setCatalogDirectory(directory);
+    await reload();
+  }, [catalogDirectory, reload]);
+
+  const removeDirectory = useCallback(async (directory: string) => {
+    if (!apiRef.current) return;
+    await apiRef.current.deleteDirectory(directory);
+    setCatalogDirectory("catalog");
+    await reload();
+  }, [reload]);
+
+  const moveDoc = useCallback(async (kind: "fragment" | "partial" | "helper", name: string, directory: string) => {
+    if (!apiRef.current) return;
+    await apiRef.current.moveDoc(kind, name, directory);
+    await reload();
+  }, [reload]);
 
   const remove = useCallback(
     async (kind: DocKind, name: string) => {
@@ -203,10 +236,14 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const view = useMemo<StoreView>(() => {
     const build = (kind: DocKind) =>
       Object.fromEntries(list(kind).map((doc) => [doc.name, content(kind, doc.name)]));
+    const paths = (kind: DocKind) => Object.fromEntries(list(kind).filter((doc) => doc.path).map((doc) => [doc.name, doc.path!]));
     return {
       fragments: build("fragment"),
       partials: build("partial"),
       helpers: build("helper"),
+      fragmentPaths: paths("fragment"),
+      partialPaths: paths("partial"),
+      helperPaths: paths("helper"),
     };
   }, [content, list]);
 
@@ -231,13 +268,20 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       reload,
       view,
       list,
+      catalogDirectory,
+      setCatalogDirectory,
+      createDirectory,
+      removeDirectory,
+      moveDoc,
     }),
     [
       api,
       applyRestored,
       connectionNote,
+      catalogDirectory,
       content,
       create,
+      createDirectory,
       discard,
       error,
       isDirty,
@@ -246,9 +290,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       mode,
       reload,
       remove,
+      removeDirectory,
       restoreTick,
       save,
       setDraft,
+      moveDoc,
       snapshot,
       view,
     ],
