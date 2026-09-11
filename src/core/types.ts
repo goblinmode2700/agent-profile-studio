@@ -14,6 +14,8 @@ export interface StudioIssue {
 export interface StoreDoc {
   name: string;
   content: string;
+  /** Store-relative source path. Names remain flat stems. */
+  path?: string;
 }
 
 export interface StoreSnapshot {
@@ -28,6 +30,9 @@ export interface StoreSnapshot {
   targetsFile?: string;
   /** True when the targets file lives outside the store, so it has no git history here. */
   targetsExternal?: boolean;
+  targetsBackup?: string;
+  /** Store-relative catalog directories, including empty uncommitted folders. */
+  catalogDirectories?: string[];
 }
 
 

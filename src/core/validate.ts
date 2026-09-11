@@ -53,7 +53,11 @@ export function validateProfileFieldSubset(
   }
   const issues: StudioIssue[] = [];
   const record = value as Record<string, unknown>;
+  if (label === "fragment" && record["promptText"] !== undefined && typeof record["promptText"] !== "string") {
+    issues.push({ severity: "error", file, field: "promptText", message: `${file}: promptText must be a string.` });
+  }
   for (const key of Object.keys(record)) {
+    if (label === "fragment" && key === "promptText") continue;
     if (!PROFILE_FIELDS.includes(key)) {
       issues.push({
         severity: "error",
