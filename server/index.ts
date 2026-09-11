@@ -5,7 +5,8 @@ import express from "express";
 import type { DocKind } from "../src/core/types";
 import { isOriginAllowed, loadConfig } from "./config";
 import { applyInstall, planInstall } from "./install";
-import { Store, StoreError, docRelPath } from "./store";
+import { Store, StoreError } from "./store";
+import { queryProjects } from "./projects";
 
 const config = loadConfig();
 const store = new Store(config.storePath, config.targetsFile);
@@ -43,7 +44,7 @@ function nameOf(value: unknown, kind: DocKind): string {
   if (typeof value !== "string") throw new StoreError("document name must be a string");
   return value;
 }
-const relOf = (kind: DocKind, name: string) => docRelPath(kind, name, config.targetsFile);
+const relOf = (kind: DocKind, name: string) => store.pathFor(kind, name);
 
 const wrap =
   (handler: (req: express.Request, res: express.Response) => Promise<unknown>) =>
@@ -63,11 +64,18 @@ app.get(
       storePath: store.root,
       targetsFile: config.targetsFile,
       targetsExternal: store.targetsExternal,
+      catalogDirectories: await store.catalogDirectories(),
+      targetsBackup: store.targetsBackupPath(),
       port: config.port,
       host: config.host,
     });
   }),
 );
+
+app.get("/api/projects", wrap(async (_req, res) => {
+  const result = await queryProjects(config);
+  res.json(result);
+}));
 
 app.get(
   "/api/store",
@@ -89,6 +97,8 @@ app.get(
       targets,
       targetsFile: config.targetsFile,
       targetsExternal: store.targetsExternal,
+      catalogDirectories: await store.catalogDirectories(),
+      targetsBackup: store.targetsBackupPath(),
     });
   }),
 );
@@ -96,14 +106,33 @@ app.get(
 app.put(
   "/api/doc",
   wrap(async (req, res) => {
-    const { kind, name, content } = req.body as { kind: string; name: string; content: string };
+    const { kind, name, content, directory } = req.body as { kind: string; name: string; content: string; directory?: string };
     if (typeof content !== "string") throw new StoreError("content must be a string");
     const k = kindOf(kind);
     const n = nameOf(name, k);
-    const commit = await store.write(k, n, content);
-    res.json({ commit, path: relOf(k, n) });
+    const commit = await store.write(k, n, content, directory);
+    res.json({ commit, path: await relOf(k, n) });
   }),
 );
+
+app.post("/api/catalog/directory", wrap(async (req, res) => {
+  const { directory } = req.body as { directory: string };
+  await store.createDirectory(directory);
+  res.json({ directories: await store.catalogDirectories(), committed: false });
+}));
+
+app.delete("/api/catalog/directory", wrap(async (req, res) => {
+  const { directory } = req.query as { directory: string };
+  await store.removeDirectory(directory);
+  res.json({ directories: await store.catalogDirectories() });
+}));
+
+app.post("/api/catalog/move", wrap(async (req, res) => {
+  const { kind, name, directory } = req.body as { kind: string; name: string; directory: string };
+  const k = kindOf(kind);
+  if (k !== "fragment" && k !== "partial" && k !== "helper") throw new StoreError("only catalog documents can move");
+  res.json({ commit: await store.move(k, nameOf(name, k), directory) });
+}));
 
 app.delete(
   "/api/doc",
@@ -141,7 +170,7 @@ app.get(
     const n = nameOf(name, k);
     const left = await store.readAt(k, n, a);
     const right = b ? await store.readAt(k, n, b) : await store.read(k, n);
-    const rel = relOf(k, n);
+    const rel = await relOf(k, n);
     res.json({
       diff: createTwoFilesPatch(
         `${rel}@${a.slice(0, 8)}`,
@@ -168,7 +197,7 @@ app.post(
   "/api/install/preview",
   wrap(async (req, res) => {
     const { role } = req.body as { role: string };
-    res.json(await planInstall(store, config.targetsFile, role));
+    res.json(await planInstall(store, config.targetsFile, role, config.projectProvider));
   }),
 );
 
@@ -179,7 +208,7 @@ app.post(
       role: string;
       entries: Array<{ target: string; expectedHash: string | null; proposedHash?: string; filePath?: string }>;
     };
-    const result = await applyInstall(store, config.targetsFile, role, entries ?? []);
+    const result = await applyInstall(store, config.targetsFile, role, entries ?? [], config.projectProvider);
     res.status(result.conflicts.length ? 409 : 200).json(result);
   }),
 );

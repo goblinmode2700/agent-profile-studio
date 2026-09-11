@@ -11,6 +11,8 @@ export interface StudioConfig {
   host: string;
   /** Origins allowed to talk to this local server. Disallowed origins are rejected. */
   allowedOrigins: string[];
+  /** Optional bounded argv-only project catalog provider. No shell is involved. */
+  projectProvider?: { executable: string; args?: string[]; timeoutMs?: number };
 }
 
 /**
@@ -55,6 +57,7 @@ export function loadConfig(root = process.cwd()): StudioConfig {
     port: Number(process.env.STUDIO_PORT ?? fileConfig.port ?? DEFAULTS.port),
     host: process.env.STUDIO_HOST ?? fileConfig.host ?? DEFAULTS.host,
     allowedOrigins: envOrigins ?? fileConfig.allowedOrigins ?? DEFAULTS.allowedOrigins,
+    ...(fileConfig.projectProvider ? { projectProvider: fileConfig.projectProvider } : {}),
   };
 }
 
