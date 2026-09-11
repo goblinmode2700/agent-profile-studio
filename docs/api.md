@@ -91,7 +91,7 @@ After review, call `POST /api/install/apply` with the preview values:
 Use null for `expectedHash` only when the preview reports a new file.
 Otherwise, copy the entry's `existingHash`.
 Always send all three comparison values.
-The current server accepts omitted `proposedHash` and `filePath`, which skips those two comparisons.
+The server rejects an entry that omits `proposedHash` or `filePath`; request a fresh preview instead of applying an incomplete confirmation.
 
 Invalid output is refused.
 A stale comparison returns HTTP 409 with `written` and `conflicts`.
