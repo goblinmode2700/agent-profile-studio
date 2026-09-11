@@ -168,6 +168,16 @@ export class Store {
         }
       }
     }
+    const stems = new Map<string, string[]>();
+    for (const entry of out) stems.set(entry.name, [...(stems.get(entry.name) ?? []), entry.path]);
+    const duplicates = [...stems].filter(([, paths]) => paths.length > 1);
+    if (duplicates.length)
+      throw new StoreError(
+        duplicates
+          .map(([name, paths]) => `catalog stem "${name}" is ambiguous: ${paths.join(", ")}`)
+          .join("; "),
+        409,
+      );
     return out.sort((a, b) => a.path.localeCompare(b.path));
   }
 

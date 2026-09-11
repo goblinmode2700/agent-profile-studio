@@ -97,6 +97,17 @@ describe("recursive catalog", () => {
     );
   });
 
+  it("rejects duplicate catalog stems across extensions", async () => {
+    await fsp.mkdir(path.join(store.root, "catalog/duplicate"), { recursive: true });
+    await fsp.writeFile(
+      path.join(store.root, "catalog/duplicate/model-sonnet-medium.hbs"),
+      "duplicate identity\n",
+    );
+    await expect(store.catalogIndex()).rejects.toThrow(
+      /catalog\/config\/model-sonnet-medium.yaml.*catalog\/duplicate\/model-sonnet-medium.hbs/,
+    );
+  });
+
   it("shows empty folders without hidden marker files and removes only empty folders", async () => {
     await store.createDirectory("catalog/empty/sub");
     expect(await store.catalogDirectories()).toContain("catalog/empty/sub");
@@ -232,6 +243,25 @@ describe("optional project provider", () => {
       projectProvider: { executable: process.execPath, args: ["-e", "process.exit(7)"] },
     });
     expect(failed.available).toBe(false);
+  });
+
+  it("rejects duplicate governed project ids", async () => {
+    const project = {
+      id: "duplicate",
+      name: "Duplicate",
+      path: "/tmp/duplicate",
+      launcherProfileDirectory: "/tmp/duplicate/profiles",
+    };
+    const payload = JSON.stringify([project, { ...project, name: "Other" }]);
+    const result = await queryProjects({
+      projectProvider: {
+        executable: process.execPath,
+        args: ["-e", `process.stdout.write(${JSON.stringify(payload)})`],
+      },
+    });
+    expect(result.available).toBe(false);
+    expect(result.projects).toEqual([]);
+    expect(result.error).toContain('duplicate project id "duplicate"');
   });
 
   it("derives governed destinations and requires a new preview when the mapping changes", async () => {

@@ -9,7 +9,7 @@ import { IssueList } from "@/components/studio/IssueList";
 import { EmptyState, Panel } from "@/components/studio/Panel";
 import { Button } from "@/components/ui/button";
 import type { DocKind } from "@/core/types";
-import { validateProfileFieldSubset } from "@/core/validate";
+import { validateProfileFieldSubset, validateTargets } from "@/core/validate";
 import { parseYaml } from "@/core/yaml";
 import { useStudio } from "@/lib/studio";
 
@@ -64,15 +64,7 @@ function FragmentsPage() {
     const parsed = parseYaml<Record<string, unknown>>(source, filePath);
     if (parsed.issues.length) return parsed.issues;
     if (selected.kind === "targets") {
-      const value = parsed.value ?? {};
-      return Object.entries(value)
-        .filter(([, def]) => !(def as { directory?: string })?.directory)
-        .map(([name]) => ({
-          severity: "error" as const,
-          file: "targets.yaml",
-          field: name,
-          message: `targets.yaml: target "${name}" needs a "directory".`,
-        }));
+      return validateTargets(parsed.value, filePath);
     }
     return validateProfileFieldSubset(parsed.value ?? {}, filePath, "fragment");
   }, [filePath, selected, source]);

@@ -45,6 +45,12 @@ export async function queryProjects(
     if (!Array.isArray(raw))
       throw new Error("provider output must be an array or an object with a projects array");
     const projects = raw.map((item, index) => normalizeProject(item, index));
+    const ids = new Set<string>();
+    for (const project of projects) {
+      if (ids.has(project.id))
+        throw new Error(`provider returned duplicate project id "${project.id}"`);
+      ids.add(project.id);
+    }
     return { available: true, measuredAt, projects };
   } catch (error) {
     return { available: false, measuredAt, projects: [], error: (error as Error).message };

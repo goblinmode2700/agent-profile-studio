@@ -6,7 +6,11 @@ import { buildProfile, type StoreView } from "../src/core/pipeline";
 import { PROFILE_FIELDS } from "../src/core/schema";
 import { SEED_FILES } from "../src/core/seed";
 import type { ProfileDoc } from "../src/core/types";
-import { validateLauncherJson, validateProfileFieldSubset } from "../src/core/validate";
+import {
+  validateLauncherJson,
+  validateProfileFieldSubset,
+  validateTargets,
+} from "../src/core/validate";
 import { parseYaml, updateYamlPath } from "../src/core/yaml";
 import { isDraftDirty } from "../src/core/drafts";
 
@@ -98,6 +102,22 @@ describe("source-preserving profile edits", () => {
 });
 
 describe("validation", () => {
+  it("accepts exactly one governed or standalone target selector", () => {
+    expect(
+      validateTargets(
+        {
+          governed: { project: "example-project" },
+          standalone: { directory: "./profiles" },
+        },
+        "targets.yaml",
+      ),
+    ).toEqual([]);
+    expect(
+      validateTargets({ both: { project: "example", directory: "./profiles" } }, "targets.yaml"),
+    ).toHaveLength(1);
+    expect(validateTargets({ neither: {} }, "targets.yaml")).toHaveLength(1);
+  });
+
   it("rejects an unknown field in a fragment, naming file and field", () => {
     const issues = validateProfileFieldSubset(
       { model: "x", temperature: 0.4 },
