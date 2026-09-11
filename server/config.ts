@@ -7,13 +7,15 @@ export interface StudioConfig {
   /** Path of the targets file, relative to the store or absolute. */
   targetsFile: string;
   port: number;
-  /** Interface to bind. Loopback only by default: this server writes files and runs helpers. */
-  host: string;
+  /** Fixed loopback interface: this server writes files and runs helpers. */
+  host: typeof LOOPBACK_HOST;
   /** Origins allowed to talk to this local server. Disallowed origins are rejected. */
   allowedOrigins: string[];
   /** Optional bounded argv-only project catalog provider. No shell is involved. */
   projectProvider?: { executable: string; args?: string[]; timeoutMs?: number };
 }
+
+export const LOOPBACK_HOST = "127.0.0.1" as const;
 
 /**
  * Local-only defaults. The server binds to loopback and accepts only the local studio UI
@@ -23,7 +25,7 @@ const DEFAULTS = {
   storePath: "./store",
   targetsFile: "targets.yaml",
   port: 4319,
-  host: "127.0.0.1",
+  host: LOOPBACK_HOST,
   allowedOrigins: [
     "http://localhost:8080",
     "http://127.0.0.1:8080",
@@ -55,7 +57,7 @@ export function loadConfig(root = process.cwd()): StudioConfig {
     storePath,
     targetsFile: process.env.STUDIO_TARGETS ?? fileConfig.targetsFile ?? DEFAULTS.targetsFile,
     port: Number(process.env.STUDIO_PORT ?? fileConfig.port ?? DEFAULTS.port),
-    host: process.env.STUDIO_HOST ?? fileConfig.host ?? DEFAULTS.host,
+    host: DEFAULTS.host,
     allowedOrigins: envOrigins ?? fileConfig.allowedOrigins ?? DEFAULTS.allowedOrigins,
     ...(fileConfig.projectProvider ? { projectProvider: fileConfig.projectProvider } : {}),
   };

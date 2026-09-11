@@ -120,7 +120,6 @@ Edit `studio.config.json`:
   "storePath": "./store",
   "targetsFile": "targets.yaml",
   "port": 4319,
-  "host": "127.0.0.1",
   "allowedOrigins": ["http://localhost:8080", "http://127.0.0.1:8080"]
 }
 ```
