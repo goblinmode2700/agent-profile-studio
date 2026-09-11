@@ -100,7 +100,9 @@ export class Store {
     return this.targetsExternal ? this.targetsFile : this.abs(this.targetsFile);
   }
 
-  targetsBackupPath(): string { return `${this.targetsPath()}.studio-backup`; }
+  targetsBackupPath(): string {
+    return `${this.targetsPath()}.studio-backup`;
+  }
 
   /** Every filesystem access goes through here: the path must stay inside the store. */
   abs(relPath: string): string {
@@ -115,14 +117,21 @@ export class Store {
 
   private async rel(kind: DocKind, name: string): Promise<string> {
     if (kind === "targets" || kind === "profile") return docRelPath(kind, name, this.targetsFile);
-    const matches = (await this.catalogIndex()).filter((entry) => entry.kind === kind && entry.name === name);
+    const matches = (await this.catalogIndex()).filter(
+      (entry) => entry.kind === kind && entry.name === name,
+    );
     if (matches.length > 1) {
-      throw new StoreError(`${kind} "${name}" is ambiguous: ${matches.map((m) => m.path).join(", ")}`, 409);
+      throw new StoreError(
+        `${kind} "${name}" is ambiguous: ${matches.map((m) => m.path).join(", ")}`,
+        409,
+      );
     }
     return matches[0]?.path ?? docRelPath(kind, name, this.targetsFile);
   }
 
-  async pathFor(kind: DocKind, name: string): Promise<string> { return this.rel(kind, name); }
+  async pathFor(kind: DocKind, name: string): Promise<string> {
+    return this.rel(kind, name);
+  }
 
   private async historicalPaths(rel: string): Promise<string[]> {
     const paths = new Set([rel, ...(this.movedFrom.get(rel) ?? [])]);
@@ -132,7 +141,10 @@ export class Store {
       changed = false;
       for (const entry of log) {
         const match = entry.commit.message.trim().match(/^move (.+) -> (.+)$/);
-        if (match && paths.has(match[2]!) && !paths.has(match[1]!)) { paths.add(match[1]!); changed = true; }
+        if (match && paths.has(match[2]!) && !paths.has(match[1]!)) {
+          paths.add(match[1]!);
+          changed = true;
+        }
       }
     }
     return [...paths];
@@ -215,19 +227,32 @@ export class Store {
 
   async list(kind: Exclude<DocKind, "targets">): Promise<Array<{ name: string; content: string }>> {
     const spec = KIND_DIR[kind];
-    const paths = kind === "profile"
-      ? (fs.existsSync(this.abs("profiles")) ? (await fsp.readdir(this.abs("profiles"), { withFileTypes: true }))
-          .filter((e) => e.isFile() && e.name.endsWith(spec.ext))
-          .map((e) => ({ name: e.name.slice(0, -spec.ext.length), path: `profiles/${e.name}` })) : [])
-      : (await this.catalogIndex()).filter((entry) => entry.kind === kind);
+    const paths =
+      kind === "profile"
+        ? fs.existsSync(this.abs("profiles"))
+          ? (await fsp.readdir(this.abs("profiles"), { withFileTypes: true }))
+              .filter((e) => e.isFile() && e.name.endsWith(spec.ext))
+              .map((e) => ({ name: e.name.slice(0, -spec.ext.length), path: `profiles/${e.name}` }))
+          : []
+        : (await this.catalogIndex()).filter((entry) => entry.kind === kind);
     const duplicates = new Map<string, string[]>();
-    for (const entry of paths) duplicates.set(entry.name, [...(duplicates.get(entry.name) ?? []), entry.path]);
+    for (const entry of paths)
+      duplicates.set(entry.name, [...(duplicates.get(entry.name) ?? []), entry.path]);
     const ambiguous = [...duplicates].filter(([, matches]) => matches.length > 1);
-    if (ambiguous.length) throw new StoreError(
-      ambiguous.map(([name, matches]) => `${kind} "${name}" is ambiguous: ${matches.join(", ")}`).join("; "), 409,
-    );
+    if (ambiguous.length)
+      throw new StoreError(
+        ambiguous
+          .map(([name, matches]) => `${kind} "${name}" is ambiguous: ${matches.join(", ")}`)
+          .join("; "),
+        409,
+      );
     const out: Array<{ name: string; content: string; path: string }> = [];
-    for (const entry of paths) out.push({ name: entry.name, path: entry.path, content: await fsp.readFile(this.abs(entry.path), "utf8") });
+    for (const entry of paths)
+      out.push({
+        name: entry.name,
+        path: entry.path,
+        content: await fsp.readFile(this.abs(entry.path), "utf8"),
+      });
     return out.sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -241,16 +266,25 @@ export class Store {
     }
   }
 
-  async write(kind: DocKind, name: string, content: string, directory?: string): Promise<CommitInfo | null> {
+  async write(
+    kind: DocKind,
+    name: string,
+    content: string,
+    directory?: string,
+  ): Promise<CommitInfo | null> {
     assertDocName(name);
     let rel = await this.rel(kind, name);
-    const exists = kind === "targets" ? fs.existsSync(this.targetsPath()) : fs.existsSync(this.abs(rel));
+    const exists =
+      kind === "targets" ? fs.existsSync(this.targetsPath()) : fs.existsSync(this.abs(rel));
     if (!exists && kind !== "targets" && kind !== "profile") {
-      if (!NEW_NAME_RE.test(name)) throw new StoreError(`new document name "${name}" must be kebab-case.`);
+      if (!NEW_NAME_RE.test(name))
+        throw new StoreError(`new document name "${name}" must be kebab-case.`);
       const collision = (await this.catalogIndex()).find((entry) => entry.name === name);
-      if (collision) throw new StoreError(`new document stem "${name}" conflicts with ${collision.path}.`, 409);
+      if (collision)
+        throw new StoreError(`new document stem "${name}" conflicts with ${collision.path}.`, 409);
       const dir = directory ?? KIND_DIR[kind].dir;
-      if (dir !== "catalog" && !dir.startsWith("catalog/")) throw new StoreError(`catalog directory must stay inside catalog.`);
+      if (dir !== "catalog" && !dir.startsWith("catalog/"))
+        throw new StoreError(`catalog directory must stay inside catalog.`);
       rel = `${dir}/${name}${KIND_DIR[kind].ext}`;
     }
     const target = kind === "targets" ? this.targetsPath() : this.abs(rel);
@@ -296,9 +330,14 @@ export class Store {
     this.assertTracked(kind, "history");
     const rel = await this.rel(kind, name);
     const paths = await this.historicalPaths(rel);
-    const logs = await Promise.all(paths.map((filepath) => git.log({ fs, dir: this.root, filepath, force: true, follow: false }).catch(() => [])));
-    const log = [...new Map(logs.flat().map((entry) => [entry.oid, entry])).values()]
-      .sort((a, b) => b.commit.author.timestamp - a.commit.author.timestamp);
+    const logs = await Promise.all(
+      paths.map((filepath) =>
+        git.log({ fs, dir: this.root, filepath, force: true, follow: false }).catch(() => []),
+      ),
+    );
+    const log = [...new Map(logs.flat().map((entry) => [entry.oid, entry])).values()].sort(
+      (a, b) => b.commit.author.timestamp - a.commit.author.timestamp,
+    );
     return log.map((entry) => ({
       oid: entry.oid,
       message: entry.commit.message.trim(),
@@ -311,8 +350,12 @@ export class Store {
     this.assertTracked(kind, "reading an earlier version");
     const rel = await this.rel(kind, name);
     for (const candidate of await this.historicalPaths(rel)) {
-      try { const { blob } = await git.readBlob({ fs, dir: this.root, oid, filepath: candidate }); return new TextDecoder().decode(blob); }
-      catch { /* try the pre-move path */ }
+      try {
+        const { blob } = await git.readBlob({ fs, dir: this.root, oid, filepath: candidate });
+        return new TextDecoder().decode(blob);
+      } catch {
+        /* try the pre-move path */
+      }
     }
     throw new StoreError(`${rel}: not present in commit ${oid.slice(0, 8)}`, 404);
   }
@@ -326,23 +369,28 @@ export class Store {
   }
 
   async createDirectory(directory: string): Promise<void> {
-    if (directory !== "catalog" && !directory.startsWith("catalog/")) throw new StoreError("directory must stay inside catalog");
+    if (directory !== "catalog" && !directory.startsWith("catalog/"))
+      throw new StoreError("directory must stay inside catalog");
     await fsp.mkdir(this.abs(directory), { recursive: true });
   }
 
   async removeDirectory(directory: string): Promise<void> {
-    if (directory === "catalog" || !directory.startsWith("catalog/")) throw new StoreError("cannot remove the catalog root");
+    if (directory === "catalog" || !directory.startsWith("catalog/"))
+      throw new StoreError("cannot remove the catalog root");
     const target = this.abs(directory);
-    if ((await fsp.readdir(target)).length) throw new StoreError(`${directory}: directory is not empty`, 409);
+    if ((await fsp.readdir(target)).length)
+      throw new StoreError(`${directory}: directory is not empty`, 409);
     await fsp.rmdir(target);
   }
 
   async move(kind: CatalogKind, name: string, directory: string): Promise<CommitInfo> {
-    if (directory !== "catalog" && !directory.startsWith("catalog/")) throw new StoreError("destination must stay inside catalog");
+    if (directory !== "catalog" && !directory.startsWith("catalog/"))
+      throw new StoreError("destination must stay inside catalog");
     const from = await this.rel(kind, name);
     const to = `${directory}/${name}${KIND_DIR[kind].ext}`;
     if (from === to) throw new StoreError(`${from}: already in that directory`, 409);
-    if (directory.startsWith(`${from}/`)) throw new StoreError("cannot move a directory into itself");
+    if (directory.startsWith(`${from}/`))
+      throw new StoreError("cannot move a directory into itself");
     if (fs.existsSync(this.abs(to))) throw new StoreError(`${to}: destination already exists`, 409);
     await fsp.mkdir(this.abs(directory), { recursive: true });
     await fsp.rename(this.abs(from), this.abs(to));

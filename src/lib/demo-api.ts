@@ -97,7 +97,12 @@ export class DemoApi implements StudioApi {
   }
 
   async getProjects() {
-    return { available: false, measuredAt: new Date().toISOString(), projects: [], error: "Project provider is available only from the local server." };
+    return {
+      available: false,
+      measuredAt: new Date().toISOString(),
+      projects: [],
+      error: "Project provider is available only from the local server.",
+    };
   }
 
   async getStore(): Promise<StoreSnapshot> {
@@ -106,10 +111,15 @@ export class DemoApi implements StudioApi {
         .filter(([p]) => p.startsWith(prefix) && p.endsWith(ext))
         .map(([p, content]) => ({ name: p.slice(prefix.length, -ext.length), content }))
         .sort((a, b) => a.name.localeCompare(b.name));
-    const catalogPick = (ext: string) => Object.entries(this.state.files)
-      .filter(([p]) => p.startsWith("catalog/") && p.endsWith(ext))
-      .map(([p, content]) => ({ name: p.slice(p.lastIndexOf("/") + 1, -ext.length), content, path: p }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const catalogPick = (ext: string) =>
+      Object.entries(this.state.files)
+        .filter(([p]) => p.startsWith("catalog/") && p.endsWith(ext))
+        .map(([p, content]) => ({
+          name: p.slice(p.lastIndexOf("/") + 1, -ext.length),
+          content,
+          path: p,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     return {
       storePath: "(demo mode — in-browser store, nothing on disk)",
       mode: "demo",
@@ -118,19 +128,30 @@ export class DemoApi implements StudioApi {
       partials: catalogPick(".hbs"),
       helpers: catalogPick(".js"),
       targets: this.state.files["targets.yaml"] ?? "",
-      catalogDirectories: this.state.directories ?? ["catalog", "catalog/config", "catalog/prompt", "catalog/helpers"],
+      catalogDirectories: this.state.directories ?? [
+        "catalog",
+        "catalog/config",
+        "catalog/prompt",
+        "catalog/helpers",
+      ],
     };
   }
 
   private currentPath(kind: DocKind, name: string): string {
-    const ext = kind === "fragment" ? ".yaml" : kind === "partial" ? ".hbs" : kind === "helper" ? ".js" : "";
-    return Object.keys(this.state.files).find((p) => p.startsWith("catalog/") && p.endsWith(`/${name}${ext}`)) ?? KIND_PATH[kind](name);
+    const ext =
+      kind === "fragment" ? ".yaml" : kind === "partial" ? ".hbs" : kind === "helper" ? ".js" : "";
+    return (
+      Object.keys(this.state.files).find(
+        (p) => p.startsWith("catalog/") && p.endsWith(`/${name}${ext}`),
+      ) ?? KIND_PATH[kind](name)
+    );
   }
 
   async saveDoc(kind: DocKind, name: string, content: string, directory?: string) {
-    const path = directory && kind !== "profile" && kind !== "targets"
-      ? `${directory}/${name}${kind === "fragment" ? ".yaml" : kind === "partial" ? ".hbs" : ".js"}`
-      : this.currentPath(kind, name);
+    const path =
+      directory && kind !== "profile" && kind !== "targets"
+        ? `${directory}/${name}${kind === "fragment" ? ".yaml" : kind === "partial" ? ".hbs" : ".js"}`
+        : this.currentPath(kind, name);
     this.state.files[path] = content;
     return this.snapshot(`save ${path}`);
   }
@@ -146,7 +167,8 @@ export class DemoApi implements StudioApi {
     this.persist();
   }
   async deleteDirectory(directory: string) {
-    if (Object.keys(this.state.files).some((p) => p.startsWith(`${directory}/`))) throw new Error(`${directory}: directory is not empty`);
+    if (Object.keys(this.state.files).some((p) => p.startsWith(`${directory}/`)))
+      throw new Error(`${directory}: directory is not empty`);
     this.state.directories = (this.state.directories ?? []).filter((d) => d !== directory);
     this.persist();
   }
@@ -166,7 +188,12 @@ export class DemoApi implements StudioApi {
     for (const commit of [...this.state.commits].reverse()) {
       const content = commit.files[path];
       if (content !== undefined && content !== previous) {
-        out.unshift({ oid: commit.oid, message: commit.message, author: "demo", date: commit.date });
+        out.unshift({
+          oid: commit.oid,
+          message: commit.message,
+          author: "demo",
+          date: commit.date,
+        });
         previous = content;
       }
     }
@@ -184,7 +211,12 @@ export class DemoApi implements StudioApi {
     const path = KIND_PATH[kind](name);
     const left = await this.version(kind, name, a);
     const right = b ? await this.version(kind, name, b) : (this.state.files[path] ?? "");
-    return createTwoFilesPatch(`${path}@${a.slice(0, 10)}`, `${path}@${b ? b.slice(0, 10) : "working"}`, left, right);
+    return createTwoFilesPatch(
+      `${path}@${a.slice(0, 10)}`,
+      `${path}@${b ? b.slice(0, 10) : "working"}`,
+      left,
+      right,
+    );
   }
 
   async restore(kind: DocKind, name: string, oid: string) {
@@ -292,13 +324,16 @@ export class DemoApi implements StudioApi {
     }>,
   ) {
     const plan = await this.installPreview(role);
-    if (!plan.valid) throw new Error(`profiles/${role}.yaml does not validate; refusing to install.`);
+    if (!plan.valid)
+      throw new Error(`profiles/${role}.yaml does not validate; refusing to install.`);
     const written: InstallPlanEntry[] = [];
     const conflicts: InstallPlanEntry[] = [];
     for (const req of requested) {
       const entry = plan.entries.find((e) => e.target === req.target);
       if (!entry || entry.status === "error") {
-        conflicts.push(entry ?? { target: req.target, directory: "", filePath: "", status: "error" });
+        conflicts.push(
+          entry ?? { target: req.target, directory: "", filePath: "", status: "error" },
+        );
         continue;
       }
       if (req.proposedHash !== undefined && req.proposedHash !== plan.proposedHash) {

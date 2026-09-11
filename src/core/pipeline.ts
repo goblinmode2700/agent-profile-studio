@@ -3,7 +3,11 @@ import { deepMergeProfileParts } from "./merge";
 import { renderTemplate } from "./render";
 import { PROFILE_DOC_FIELDS } from "./schema";
 import type { BuildResult, ProfileDoc, StudioIssue } from "./types";
-import { projectLauncherFields, validateLauncherJson, validateProfileFieldSubset } from "./validate";
+import {
+  projectLauncherFields,
+  validateLauncherJson,
+  validateProfileFieldSubset,
+} from "./validate";
 import { parseYaml, yamlNodePosition } from "./yaml";
 
 export interface StoreView {
@@ -25,11 +29,19 @@ function discardedPromptTemplateIssue(
   prefix?: string,
 ): StudioIssue[] {
   const prompt = value["prompt"];
-  if (!prompt || typeof prompt !== "object" || Array.isArray(prompt) || !("template" in prompt)) return [];
+  if (!prompt || typeof prompt !== "object" || Array.isArray(prompt) || !("template" in prompt))
+    return [];
   const position = parsed ? yamlNodePosition(parsed, ["prompt", "template"]) : {};
   const field = prefix ? `${prefix}.prompt.template` : "prompt.template";
-  return [{ severity: "error", file, field, ...position,
-    message: `${file}${position.line ? `:${position.line}` : ""}: ${field} is generated from the profile layout and would be discarded; use fragment promptText plus {{fragmentPrompts}} instead.` }];
+  return [
+    {
+      severity: "error",
+      file,
+      field,
+      ...position,
+      message: `${file}${position.line ? `:${position.line}` : ""}: ${field} is generated from the profile layout and would be discarded; use fragment promptText plus {{fragmentPrompts}} instead.`,
+    },
+  ];
 }
 
 /**
@@ -96,9 +108,9 @@ export function buildProfile(doc: ProfileDoc, store: StoreView): BuildResult {
   const shapeIssues = validateProfileDocShape(doc, file);
   const issues: StudioIssue[] = [...shapeIssues];
 
-  const record = (doc && typeof doc === "object" && !Array.isArray(doc)
-    ? (doc as Record<string, unknown>)
-    : {}) as Record<string, unknown>;
+  const record = (
+    doc && typeof doc === "object" && !Array.isArray(doc) ? (doc as Record<string, unknown>) : {}
+  ) as Record<string, unknown>;
   const listOf = (key: string): string[] => {
     const value = record[key];
     return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
@@ -109,7 +121,6 @@ export function buildProfile(doc: ProfileDoc, store: StoreView): BuildResult {
       ? (value as Record<string, unknown>)
       : {};
   };
-
 
   // 1. imports -> deep merge, later wins
   const fragmentObjects: Array<Record<string, unknown>> = [];
@@ -131,8 +142,13 @@ export function buildProfile(doc: ProfileDoc, store: StoreView): BuildResult {
       const { promptText, ...launcherFields } = parsed.value;
       if (promptText !== undefined && typeof promptText !== "string") {
         const position = yamlNodePosition(parsed, ["promptText"]);
-        issues.push({ severity: "error", file: fragFile, field: "promptText", ...position,
-          message: `${fragFile}${position.line ? `:${position.line}` : ""}: promptText must be a string.` });
+        issues.push({
+          severity: "error",
+          file: fragFile,
+          field: "promptText",
+          ...position,
+          message: `${fragFile}${position.line ? `:${position.line}` : ""}: promptText must be a string.`,
+        });
       } else if (typeof promptText === "string") {
         contributions.push({ name, source: promptText, file: fragFile });
       }
@@ -196,7 +212,8 @@ export function buildProfile(doc: ProfileDoc, store: StoreView): BuildResult {
       mergedPrompt && typeof mergedPrompt === "object" && "mode" in mergedPrompt
         ? (mergedPrompt as { mode?: unknown }).mode
         : undefined;
-    fields["prompt"] = mode === undefined ? { template: promptText } : { template: promptText, mode };
+    fields["prompt"] =
+      mode === undefined ? { template: promptText } : { template: promptText, mode };
   }
 
   // 6. validate against the launcher schema

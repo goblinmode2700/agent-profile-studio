@@ -37,7 +37,8 @@ model: null
 `;
 
 function FragmentsPage() {
-  const { list, content, setDraft, discard, isDirty, save, create, remove, mode, storePath } = useStudio();
+  const { list, content, setDraft, discard, isDirty, save, create, remove, mode, storePath } =
+    useStudio();
   const fragments = list("fragment");
   const helpers = list("helper");
   const [selected, setSelected] = useState<{ kind: DocKind; name: string } | null>(null);
@@ -50,9 +51,11 @@ function FragmentsPage() {
 
   const filePath = selected
     ? selected.kind === "fragment"
-      ? fragments.find((doc) => doc.name === selected.name)?.path ?? `catalog/config/${selected.name}.yaml`
+      ? (fragments.find((doc) => doc.name === selected.name)?.path ??
+        `catalog/config/${selected.name}.yaml`)
       : selected.kind === "helper"
-        ? helpers.find((doc) => doc.name === selected.name)?.path ?? `catalog/helpers/${selected.name}.js`
+        ? (helpers.find((doc) => doc.name === selected.name)?.path ??
+          `catalog/helpers/${selected.name}.js`)
         : "targets.yaml"
     : "";
 
@@ -77,7 +80,11 @@ function FragmentsPage() {
   const importedBy = useMemo(() => {
     if (!selected || selected.kind !== "fragment") return [];
     return list("profile")
-      .filter((p) => (parseYaml<{ imports?: string[] }>(content("profile", p.name), p.name).value?.imports ?? []).includes(selected.name))
+      .filter((p) =>
+        (
+          parseYaml<{ imports?: string[] }>(content("profile", p.name), p.name).value?.imports ?? []
+        ).includes(selected.name),
+      )
       .map((p) => p.name);
   }, [content, list, selected]);
 
@@ -97,7 +104,9 @@ function FragmentsPage() {
             selected={selected?.kind === "fragment" ? selected.name : null}
             onSelect={(name) => setSelected({ kind: "fragment", name })}
             onCreate={(name) =>
-              void create("fragment", name, NEW_FRAGMENT).then(() => setSelected({ kind: "fragment", name }))
+              void create("fragment", name, NEW_FRAGMENT).then(() =>
+                setSelected({ kind: "fragment", name }),
+              )
             }
             onDelete={(name) => void remove("fragment", name)}
             isDirty={(name) => isDirty("fragment", name)}
@@ -136,7 +145,10 @@ function FragmentsPage() {
         </div>
 
         {!selected ? (
-          <EmptyState title="No fragment selected" hint="Pick a fragment, or create one with the + button." />
+          <EmptyState
+            title="No fragment selected"
+            hint="Pick a fragment, or create one with the + button."
+          />
         ) : (
           <div className="grid min-h-0 grid-cols-[1.5fr_1fr] gap-2">
             <Panel
@@ -152,7 +164,11 @@ function FragmentsPage() {
                   >
                     <Undo2 className="size-3" />
                   </Button>
-                  <Button size="xs" disabled={!dirty} onClick={() => void save(selected.kind, selected.name)}>
+                  <Button
+                    size="xs"
+                    disabled={!dirty}
+                    onClick={() => void save(selected.kind, selected.name)}
+                  >
                     <Save className="size-3" /> Save
                   </Button>
                 </>
@@ -169,7 +185,9 @@ function FragmentsPage() {
                 title="validation"
                 actions={
                   selected.kind !== "helper" && (
-                    <span className={`font-mono text-[10px] ${issues.length ? "text-destructive" : "text-primary"}`}>
+                    <span
+                      className={`font-mono text-[10px] ${issues.length ? "text-destructive" : "text-primary"}`}
+                    >
                       {issues.length ? `${issues.length} errors` : "valid"}
                     </span>
                   )
@@ -178,8 +196,8 @@ function FragmentsPage() {
                 {selected.kind === "helper" ? (
                   <p className="p-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
                     Helpers are plain JavaScript, loaded before rendering. Call
-                    <span className="text-foreground"> Handlebars.registerHelper</span>, or export a function that
-                    receives Handlebars. Errors appear where the helper is used.
+                    <span className="text-foreground"> Handlebars.registerHelper</span>, or export a
+                    function that receives Handlebars. Errors appear where the helper is used.
                   </p>
                 ) : (
                   <IssueList issues={issues} okLabel="Every field is a known launcher field." />
@@ -188,7 +206,9 @@ function FragmentsPage() {
               <Panel title={selected.kind === "fragment" ? "imported by" : "notes"}>
                 {selected.kind === "fragment" ? (
                   importedBy.length === 0 ? (
-                    <p className="p-2.5 font-mono text-[11px] text-muted-foreground">No profile imports this fragment.</p>
+                    <p className="p-2.5 font-mono text-[11px] text-muted-foreground">
+                      No profile imports this fragment.
+                    </p>
                   ) : (
                     <ul className="p-2.5 font-mono text-[11px] leading-relaxed">
                       {importedBy.map((name) => (
@@ -198,8 +218,8 @@ function FragmentsPage() {
                   )
                 ) : (
                   <p className="p-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
-                    Target directories may be absolute, or relative to the store directory. The studio only ever writes
-                    one file per target: &lt;role&gt;.json.
+                    Target directories may be absolute, or relative to the store directory. The
+                    studio only ever writes one file per target: &lt;role&gt;.json.
                   </p>
                 )}
               </Panel>

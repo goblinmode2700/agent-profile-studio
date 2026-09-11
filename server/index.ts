@@ -72,10 +72,13 @@ app.get(
   }),
 );
 
-app.get("/api/projects", wrap(async (_req, res) => {
-  const result = await queryProjects(config);
-  res.json(result);
-}));
+app.get(
+  "/api/projects",
+  wrap(async (_req, res) => {
+    const result = await queryProjects(config);
+    res.json(result);
+  }),
+);
 
 app.get(
   "/api/store",
@@ -106,7 +109,12 @@ app.get(
 app.put(
   "/api/doc",
   wrap(async (req, res) => {
-    const { kind, name, content, directory } = req.body as { kind: string; name: string; content: string; directory?: string };
+    const { kind, name, content, directory } = req.body as {
+      kind: string;
+      name: string;
+      content: string;
+      directory?: string;
+    };
     if (typeof content !== "string") throw new StoreError("content must be a string");
     const k = kindOf(kind);
     const n = nameOf(name, k);
@@ -115,24 +123,34 @@ app.put(
   }),
 );
 
-app.post("/api/catalog/directory", wrap(async (req, res) => {
-  const { directory } = req.body as { directory: string };
-  await store.createDirectory(directory);
-  res.json({ directories: await store.catalogDirectories(), committed: false });
-}));
+app.post(
+  "/api/catalog/directory",
+  wrap(async (req, res) => {
+    const { directory } = req.body as { directory: string };
+    await store.createDirectory(directory);
+    res.json({ directories: await store.catalogDirectories(), committed: false });
+  }),
+);
 
-app.delete("/api/catalog/directory", wrap(async (req, res) => {
-  const { directory } = req.query as { directory: string };
-  await store.removeDirectory(directory);
-  res.json({ directories: await store.catalogDirectories() });
-}));
+app.delete(
+  "/api/catalog/directory",
+  wrap(async (req, res) => {
+    const { directory } = req.query as { directory: string };
+    await store.removeDirectory(directory);
+    res.json({ directories: await store.catalogDirectories() });
+  }),
+);
 
-app.post("/api/catalog/move", wrap(async (req, res) => {
-  const { kind, name, directory } = req.body as { kind: string; name: string; directory: string };
-  const k = kindOf(kind);
-  if (k !== "fragment" && k !== "partial" && k !== "helper") throw new StoreError("only catalog documents can move");
-  res.json({ commit: await store.move(k, nameOf(name, k), directory) });
-}));
+app.post(
+  "/api/catalog/move",
+  wrap(async (req, res) => {
+    const { kind, name, directory } = req.body as { kind: string; name: string; directory: string };
+    const k = kindOf(kind);
+    if (k !== "fragment" && k !== "partial" && k !== "helper")
+      throw new StoreError("only catalog documents can move");
+    res.json({ commit: await store.move(k, nameOf(name, k), directory) });
+  }),
+);
 
 app.delete(
   "/api/doc",
@@ -206,9 +224,20 @@ app.post(
   wrap(async (req, res) => {
     const { role, entries } = req.body as {
       role: string;
-      entries: Array<{ target: string; expectedHash: string | null; proposedHash?: string; filePath?: string }>;
+      entries: Array<{
+        target: string;
+        expectedHash: string | null;
+        proposedHash?: string;
+        filePath?: string;
+      }>;
     };
-    const result = await applyInstall(store, config.targetsFile, role, entries ?? [], config.projectProvider);
+    const result = await applyInstall(
+      store,
+      config.targetsFile,
+      role,
+      entries ?? [],
+      config.projectProvider,
+    );
     res.status(result.conflicts.length ? 409 : 200).json(result);
   }),
 );
@@ -217,7 +246,9 @@ await store.init();
 app.listen(config.port, config.host, () => {
   console.log(`Agent Profile Studio server`);
   console.log(`  store   : ${store.root}`);
-  console.log(`  targets : ${config.targetsFile}${store.targetsExternal ? " (external, no git history)" : ""}`);
+  console.log(
+    `  targets : ${config.targetsFile}${store.targetsExternal ? " (external, no git history)" : ""}`,
+  );
   console.log(`  api     : http://${config.host}:${config.port}/api/health (loopback only)`);
   console.log(`  origins : ${config.allowedOrigins.join(", ")}`);
 });

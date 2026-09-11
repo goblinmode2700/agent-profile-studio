@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -174,7 +182,9 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           kind,
           name,
           initial,
-          kind === "fragment" || kind === "partial" || kind === "helper" ? catalogDirectory : undefined,
+          kind === "fragment" || kind === "partial" || kind === "helper"
+            ? catalogDirectory
+            : undefined,
         );
         await reload();
         toast.success(`Created ${name}`);
@@ -186,26 +196,35 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     [catalogDirectory, reload],
   );
 
-  const createDirectory = useCallback(async (name: string) => {
-    if (!apiRef.current) return;
-    const directory = `${catalogDirectory}/${name}`;
-    await apiRef.current.createDirectory(directory);
-    setCatalogDirectory(directory);
-    await reload();
-  }, [catalogDirectory, reload]);
+  const createDirectory = useCallback(
+    async (name: string) => {
+      if (!apiRef.current) return;
+      const directory = `${catalogDirectory}/${name}`;
+      await apiRef.current.createDirectory(directory);
+      setCatalogDirectory(directory);
+      await reload();
+    },
+    [catalogDirectory, reload],
+  );
 
-  const removeDirectory = useCallback(async (directory: string) => {
-    if (!apiRef.current) return;
-    await apiRef.current.deleteDirectory(directory);
-    setCatalogDirectory("catalog");
-    await reload();
-  }, [reload]);
+  const removeDirectory = useCallback(
+    async (directory: string) => {
+      if (!apiRef.current) return;
+      await apiRef.current.deleteDirectory(directory);
+      setCatalogDirectory("catalog");
+      await reload();
+    },
+    [reload],
+  );
 
-  const moveDoc = useCallback(async (kind: "fragment" | "partial" | "helper", name: string, directory: string) => {
-    if (!apiRef.current) return;
-    await apiRef.current.moveDoc(kind, name, directory);
-    await reload();
-  }, [reload]);
+  const moveDoc = useCallback(
+    async (kind: "fragment" | "partial" | "helper", name: string, directory: string) => {
+      if (!apiRef.current) return;
+      await apiRef.current.moveDoc(kind, name, directory);
+      await reload();
+    },
+    [reload],
+  );
 
   const remove = useCallback(
     async (kind: DocKind, name: string) => {
@@ -236,7 +255,12 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const view = useMemo<StoreView>(() => {
     const build = (kind: DocKind) =>
       Object.fromEntries(list(kind).map((doc) => [doc.name, content(kind, doc.name)]));
-    const paths = (kind: DocKind) => Object.fromEntries(list(kind).filter((doc) => doc.path).map((doc) => [doc.name, doc.path!]));
+    const paths = (kind: DocKind) =>
+      Object.fromEntries(
+        list(kind)
+          .filter((doc) => doc.path)
+          .map((doc) => [doc.name, doc.path!]),
+      );
     return {
       fragments: build("fragment"),
       partials: build("partial"),

@@ -35,7 +35,6 @@ export interface StoreSnapshot {
   catalogDirectories?: string[];
 }
 
-
 export interface ProfileDoc {
   role?: string;
   imports?: string[];

@@ -102,6 +102,7 @@ Inspect both arrays before reporting success.
 There is no file watcher, server event stream, or conflict check for document saves.
 Refresh the UI after external edits and resolve unsaved drafts before another writer saves.
 Do not use the installation checks as evidence that simultaneous document editing is safe.
+
 ## Additional catalog endpoints
 
 The server remains loopback-only. Browser requests never supply executable commands.
